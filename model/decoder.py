@@ -11,6 +11,7 @@ class Decoder(nn.Module):
     """GRU-based decoder.
     """
     def __init__(self,
+                 inputs: int,
                  channels: int,
                  hiddens: List[int],
                  dropout: float,
@@ -18,15 +19,16 @@ class Decoder(nn.Module):
                  mel: int):
         """Initializer.
         Args:
-            channels: size of the input channels.
-            hiddnes: the size of the hidden units for decoder prenet.
+            inputs: size of the input channels.
+            channels: size of the hidden channels.
+            hiddens: the size of the hidden units for decoder prenet.
             dropout: dropout rates for decoder prenet.
             layers: the number of the GRU layers.
             mel: size of the output channels (channels of mel-spectrogram).
         """
         super().__init__()
         self.prenet = Prenet(mel, hiddens, dropout)
-        self.attn = nn.GRU(channels + hiddens[-1], channels, batch_first=True)
+        self.attn = nn.GRU(inputs + hiddens[-1], channels, batch_first=True)
         self.grus = nn.ModuleList([
             nn.GRU(channels, channels, batch_first=True)
             for _ in range(layers)])
@@ -35,7 +37,7 @@ class Decoder(nn.Module):
     def forward(self, inputs: torch.Tensor, gt: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Generate spectrgram from intermediate features.
         Args:
-            inputs: [torch.float32; [B, T, C]], input tensors.
+            inputs: [torch.float32; [B, T, I]], input tensors.
             gt: [torch.float32; [B, T, M]], ground-truth spectrogram, if provided.
         Returns:
             [torch.float32; [B, T, M]], predicted spectrogram.
@@ -58,7 +60,7 @@ class Decoder(nn.Module):
     def inference(self, inputs: torch.Tensor) -> torch.Tensor:
         """Generate spectrogram autoregressively.
         Args:
-            inputs: [torch.float32; [B, T, C]], input tensors.
+            inputs: [torch.float32; [B, T, I]], input tensors.
         Returns:
             [torch.float32; [B, T, M]], predicted spectrogram.
         """
@@ -74,7 +76,7 @@ class Decoder(nn.Module):
         frame = torch.zeros(bsize, self.proj.out_features, device=inputs.device)
         # T x [B, M]
         frames = []
-        # [B, C]
+        # [B, I]
         for feat in inputs.transpose(0, 1):
             # [B, H]
             preproc = self.prenet(frame)
