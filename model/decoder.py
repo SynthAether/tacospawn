@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .misc import Prenet, Reduction
+from .misc import Prenet
 
 
 class Decoder(nn.Module):
@@ -14,7 +14,6 @@ class Decoder(nn.Module):
                  channels: int,
                  hiddens: List[int],
                  dropout: float,
-                 reduction: int,
                  layers: int,
                  mel: int):
         """Initializer.
@@ -22,23 +21,21 @@ class Decoder(nn.Module):
             channels: size of the input channels.
             hiddnes: the size of the hidden units for decoder prenet.
             dropout: dropout rates for decoder prenet.
-            reduction: reduction factor. 
             layers: the number of the GRU layers.
             mel: size of the output channels (channels of mel-spectrogram).
         """
         super().__init__()
-        self.prenet = Prenet(reduction * mel, hiddens, dropout)
-        self.reduction = Reduction(reduction)
+        self.prenet = Prenet(mel, hiddens, dropout)
         self.attn = nn.GRU(channels + hiddens[-1], channels, batch_first=True)
         self.grus = nn.ModuleList([
             nn.GRU(channels, channels, batch_first=True)
             for _ in range(layers)])
-        self.proj = nn.Linear(channels, reduction * mel)
+        self.proj = nn.Linear(channels, mel)
 
     def forward(self, inputs: torch.Tensor, gt: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Generate spectrgram from intermediate features.
         Args:
-            inputs: [torch.float32; [B, T // F, C]], input tensors.
+            inputs: [torch.float32; [B, T, C]], input tensors.
             gt: [torch.float32; [B, T, M]], ground-truth spectrogram, if provided.
         Returns:
             [torch.float32; [B, T, M]], predicted spectrogram.
@@ -46,11 +43,9 @@ class Decoder(nn.Module):
         # autoregression
         if gt is None:
             return self.inference(inputs)
-        # [B, T // F, F x M]
-        gt, r = self.reduction(gt)
-        # [B, T // F, H], pad for teacher force
+        # [B, T, H], pad for teacher force
         preproc = self.prenet(F.pad(gt, [0, 0, 1, -1]))
-        # [B, T // F, C]
+        # [B, T, C]
         x, _ = self.attn(torch.cat([inputs, preproc], dim=-1))
         for gru in self.grus:
             # [B, T // F, C]
@@ -58,12 +53,12 @@ class Decoder(nn.Module):
             # [B, T // F, C], residual connection
             x = x + out
         # [B, T, M]
-        return self.reduction.unfold(self.proj(x), r)
+        return self.proj(x)
 
     def inference(self, inputs: torch.Tensor) -> torch.Tensor:
         """Generate spectrogram autoregressively.
         Args:
-            inputs: [torch.float32; [B, T // F, C]], input tensors.
+            inputs: [torch.float32; [B, T, C]], input tensors.
         Returns:
             [torch.float32; [B, T, M]], predicted spectrogram.
         """
@@ -72,12 +67,12 @@ class Decoder(nn.Module):
         cells = [self.grucell(gru) for gru in self.grus]
         # B
         bsize = inputs.size(0)
-        # [B, C], prepare hiddens
+        # [B, C], L x [B, C], prepare hiddens
         attnhidd = torch.zeros(bsize, attncell.hidden_size, device=inputs.device)
         hiddens = [torch.zeros(bsize, gru.hidden_size) for gru in self.grus]
-        # [B, F x M], start frame
+        # [B, M], start frame
         frame = torch.zeros(bsize, self.proj.out_features, device=inputs.device)
-        # (T // F) x [B, F x M]
+        # T x [B, M]
         frames = []
         # [B, C]
         for feat in inputs.transpose(0, 1):
@@ -99,7 +94,7 @@ class Decoder(nn.Module):
             frame = self.proj(x)
             frames.append(frame)
         # [B, T // F, F x M]
-        return self.reduction.unfold(torch.stack(frames, dim=1), remains=None)
+        return torch.stack(frames, dim=1)
 
     def grucell(self, gru: nn.GRU) -> nn.GRUCell:
         """Convert sequence operation to cell operation.
