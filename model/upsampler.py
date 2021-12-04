@@ -9,17 +9,19 @@ import torch.nn.functional as F
 class Upsampler(nn.Module):
     """Gaussian upsampler from Non-attentive Tacotron.
     """
-    def __init__(self, channels: int, layers: int):
+    def __init__(self, inputs: int, channels: int, layers: int):
         """Initializer.
         Args:
-            channels: size of the input channels.
+            inputs: size of the input channels.
+            channels: size of the hidden channels.
             layers: the number of the BiGRUs.
         """
         super().__init__()
+        self.proj_in = nn.Linear(inputs, channels * 2)
         self.bigrus = nn.ModuleList([
             nn.GRU(channels * 2, channels, batch_first=True, bidirectional=True)
             for _ in range(layers)])
-        self.proj = nn.Linear(channels * 2, 2)
+        self.proj_out = nn.Linear(channels * 2, 2)
 
     def forward(self,
                 inputs: torch.Tensor,
@@ -28,21 +30,22 @@ class Upsampler(nn.Module):
             Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Upsampling inputs w.r.t. predicted durations.
         Args:
-            inputs: [torch.float32; [B, S, C]], input tensor.
+            inputs: [torch.float32; [B, S, I]], input tensor.
             mask: [torch.float32; [B, S]], binary sequence mask.
             lengths: [torch.long; [B]], target spectrogram lengths, if provided.
         Returns:
-            upsampled: [torch.float32; [B, T, C]], upsampled feature map.
+            upsampled: [torch.float32; [B, T, I]], upsampled feature map.
             align: [torch.float32; [B, T, S]], alignment.
             lengths: [torch.long; [B]], spectrogram lengths.
             factor: [torch.float32; [B]], residual lengths.
         """
-        x = inputs
+        # [B, S, C x 2]
+        x = self.proj_in(inputs)
         for bigru in self.bigrus:
-            # [B, S, C]
+            # [B, S, C x 2]
             x, _ = bigru(x)
         # [B, S, 1], [B, S, 1]
-        logdur, range_ = self.proj(x).chunk(2, dim=-1)
+        logdur, range_ = self.proj_out(x).chunk(2, dim=-1)
         # [B, S], [B, S]
         logdur, range_ = logdur.squeeze(dim=-1), range_.squeeze(dim=-1)
         # re-ranging
@@ -73,7 +76,7 @@ class Upsampler(nn.Module):
         # [B, T, S]
         align = align / (
             (align * mask[:, None]).sum(dim=-1, keepdim=True) + 1e-5) * attn_mask
-        # [B, T, C]
+        # [B, T, I]
         upsampled = torch.matmul(align, inputs)
-        # [B, T, S], [B], [B]
+        # [B, T, I], [B], [B]
         return upsampled, align, lengths, factor
