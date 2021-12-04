@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from .cbhg import Cbhg
 from .config import Config
-from .sequential import Prenet
+from .misc import Prenet
 
 
 class Encoder(nn.Module):
