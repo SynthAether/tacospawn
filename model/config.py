@@ -1,18 +1,23 @@
 class Config:
     """Model configuration.
     """
-    def __init__(self, vocabs: int, mel: int):
+    def __init__(self, vocabs: int, mel: int, speakers: int):
         """Initializer.
         Args:
             vocabs: the size of the dictionary.
             mel: the number of the mel-scale filterbank bins.
+            speakers: the number of the training speakers.
         """
         self.vocabs = vocabs
         self.mel = mel
+        self.speakers = speakers
 
         # channel info
         self.embeddings = 256
         self.channels = 256
+
+        # speaker embedding
+        self.modal = 5
         self.spkembed = 128
 
         # encoder
