@@ -57,9 +57,11 @@ class Cbhg(nn.Module):
         # [B, C, T]
         for proj in self.highway:
             # [B, C, T], [B, C, T]
-            context, gate = proj(x).chunk(2, dim=1)
+            context, logit = proj(x).chunk(2, dim=1)
             # [B, C, T]
-            x = context * torch.sigmoid(gate)
+            gate = torch.sigmoid(logit)
+            # [B, C, T]
+            x = context * gate + x * (1. - gate)
         # [B, T, C x 2]
         outputs, _ = self.bigru(x.transpose(1, 2))
         return outputs
