@@ -1,7 +1,9 @@
+import itertools
 from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .cbhg import Cbhg
 from .config import Config
@@ -98,7 +100,7 @@ class NonAttentiveTacotron(nn.Module):
         # [B, T // F, C + E], [B], _
         upsampled, predlen, aux = self.upsampler(encodings, text_mask, mellen)
         # [B, T // F, P]
-        pe = self.tokenwise_posenc(aux['durations'], predlen)
+        pe = self.tokenwise_posenc(aux['durations'], upsampled.size(1))
         # [B, T // F, F x M]
         mel = self.decoder(torch.cat([upsampled, pe], dim=-1), mel)
 
@@ -114,12 +116,28 @@ class NonAttentiveTacotron(nn.Module):
         # [B, T, M]
         return mel * mel_mask[..., None], mellen, aux
 
-    def tokenwise_posenc(self, durations: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+    def tokenwise_posenc(self, durations: torch.Tensor, maxlen: int) -> torch.Tensor:
         """Generate tokenwise positional encodings.
         Args:
             durations: [torch.float32; [B, S]], durations, not quantized.
-            lengths: [torch.long, [B]], lengths.
+            maxlen: total length of the posenc.
         Returns:
             [torch.float32; [B, T, C]], token-wise positional encodings.
         """
-
+        # [B, S], quantize
+        cumdur = torch.round(torch.cumsum(durations, dim=-1)).to(torch.long)
+        # [B, S]
+        durations = cumdur - F.pad(cumdur, [1, 0])
+        # [K, C]
+        cache = self.pe(durations.max())
+        # [B, T, C]
+        pe = torch.zeros(
+            durations.size(0), maxlen, cache.size(-1), device=cache.device)
+        # [], [S]
+        for i, dur in enumerate(durations.detach().cpu().numpy()):
+            # [T]
+            indices = list(itertools.chain.from_iterable(range(s) for s in dur))
+            # [T, C]
+            pe[i, :len(indices)] = cache[indices]
+        # [B, T, C]
+        return pe
