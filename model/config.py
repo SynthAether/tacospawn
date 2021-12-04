@@ -24,11 +24,13 @@ class Config:
         self.cbhg_kernels = 3
         self.cbhg_highways = 4
 
+        # reduction
+        self.reduction = 2
+
         # upsampler
         self.upsampler_layers = 2
 
         # decoder
         self.dec_prenet = [256, 128]
         self.dec_dropout = 0.5
-        self.dec_reduction = 2
         self.dec_layers = 2

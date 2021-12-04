@@ -1,9 +1,12 @@
+from typing import Dict, Optional
+
 import torch
 import torch.nn as nn
 
 from .cbhg import Cbhg
 from .config import Config
-from .misc import Prenet
+from .decoder import Decoder
+from .misc import Prenet, Reduction
 from .upsampler import Upsampler
 
 
@@ -29,20 +32,72 @@ class NonAttentiveTacotron(nn.Module):
             config.cbhg_kernels,
             config.cbhg_highways)
 
-        self.upsampler = Upsampler(
-            config.channels, config.upsampler_layers)
+        self.reduction = Reduction(config.reduction)
 
-    def forward(self, inputs: torch.Tensor, textlen: torch.Tensor) -> torch.Tensor:
+        self.upsampler = Upsampler(
+            config.channels,
+            config.upsampler_layers)
+
+        self.decoder = Decoder(
+            config.channels,
+            config.dec_prenet,
+            config.dec_dropout,
+            config.dec_layers,
+            config.reduction * config.mel)
+
+    def forward(self,
+                inputs: torch.Tensor,
+                textlen: torch.Tensor,
+                mel: Optional[torch.Tensor] = None,
+                mellen: Optional[torch.Tensor] = None) -> \
+            Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         """Encode text tokens.
         Args;
             inputs: [torch.long; [B, S]], text symbol sequences.
             textlen: [torch.long; [B]], sequence lengths.
+            mel: [torch.float32; [B, T, M]], mel-spectrogram, if provided.
+            mellen: [torch.long; [B]], spectrogram lengths, if provided.
         Returns:
-            [torch.float32; [B, S, C x 2]], CBHG features.
+            mel: [torch.float32; [B, T, B]], predicted spectrogram.
+            mellen: [torch.long; [B]], spectrogram lengths.
+            auxiliary: auxiliary informations.
+                align: [torch.float32; [B, T // F, S]], attention alignments.
+                factor: [torch.float32; [B]], size ratio between ground-truth and predicted lengths.
         """
+        ## 1. Text encoding
+        # [B, S]
+        text_mask = (
+            torch.arange(encodings.size(1), device=encodings.device)[None]
+            < textlen[:, None]).to(torch.float32)
         # [B, S, E]
         embed = self.embedding(inputs)
+        # [B, S, C // 2], masking for initial convolution of CBHG.
+        preproc = self.prenet(embed) * text_mask[..., None]
         # [B, S, C]
-        preproc = self.prenet(embed)
-        # [B, S, C x 2]
-        return self.cbhg(preproc)
+        encodings = self.cbhg(preproc)
+
+        ## 3. Decoding
+        if mel is not None:
+            # [B, T // F, F x M]
+            mel, remains = self.reduction(mel)
+            # [B], assume mellen is not None
+            mellen = torch.ceil(mellen / self.reduction.factor).to(torch.long)
+        else:
+            remains = None
+        # [B, T // F, C], [B, T // F, S], [B], [B]
+        upsampled, align, predlen, factor = self.upsampler(encodings, text_mask, mellen)
+        # [B, T // F, F x M]
+        mel = self.decoder(upsampled, mel)
+
+        ## 4. Unfold
+        if mellen is None:
+            mellen = predlen.to(torch.long) * self.reduction.factor
+        # [B, T, M]
+        mel = self.reduction.unfold(mel, remains)
+        # [B, T]
+        mel_mask = (
+            torch.arange(mel.size(1), device=mel.device)[None]
+            < mellen[:, None]).to(torch.float32)
+        # [B, T, M]
+        return mel * mel_mask[..., None], mellen, {
+            'align': align, 'factor': factor}
