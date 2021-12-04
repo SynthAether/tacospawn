@@ -34,7 +34,7 @@ class Reduction(nn.Module):
         super().__init__()
         self.reduction = reduction
 
-    def fold(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, Optional[int]]:
+    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, Optional[int]]:
         """Fold the inputs, apply reduction factor.
         Args:
             input: [torch.float32; [B, T, C]], input tensor.
