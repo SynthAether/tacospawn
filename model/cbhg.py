@@ -53,7 +53,7 @@ class Cbhg(nn.Module):
         # [B, K x C, T]
         bank = torch.cat([kgram(x)[..., :timestep] for kgram in self.banks], dim=1)
         # [B, C, T]
-        x = x + self.proj(bank)
+        x = x + self.proj(bank)[..., :timestep]
         # [B, C, T]
         for proj in self.highway:
             # [B, C, T], [B, C, T]
