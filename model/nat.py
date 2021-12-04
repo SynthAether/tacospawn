@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -35,10 +35,12 @@ class NonAttentiveTacotron(nn.Module):
         self.reduction = Reduction(config.reduction)
 
         self.upsampler = Upsampler(
-            config.channels,
+            config.channels + config.spkembed,
+            config.channels // 2,
             config.upsampler_layers)
 
         self.decoder = Decoder(
+            config.channels + config.spkembed,
             config.channels,
             config.dec_prenet,
             config.dec_dropout,
@@ -48,6 +50,7 @@ class NonAttentiveTacotron(nn.Module):
     def forward(self,
                 inputs: torch.Tensor,
                 textlen: torch.Tensor,
+                spkembed: torch.Tensor,
                 mel: Optional[torch.Tensor] = None,
                 mellen: Optional[torch.Tensor] = None) -> \
             Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
@@ -55,6 +58,7 @@ class NonAttentiveTacotron(nn.Module):
         Args;
             inputs: [torch.long; [B, S]], text symbol sequences.
             textlen: [torch.long; [B]], sequence lengths.
+            spkembed: [torch.float32; [B, E]], speaker embeddings.
             mel: [torch.float32; [B, T, M]], mel-spectrogram, if provided.
             mellen: [torch.long; [B]], spectrogram lengths, if provided.
         Returns:
@@ -65,9 +69,11 @@ class NonAttentiveTacotron(nn.Module):
                 factor: [torch.float32; [B]], size ratio between ground-truth and predicted lengths.
         """
         ## 1. Text encoding
+        # S
+        seqlen = inputs.size(1)
         # [B, S]
         text_mask = (
-            torch.arange(encodings.size(1), device=encodings.device)[None]
+            torch.arange(seqlen, device=inputs.device)[None]
             < textlen[:, None]).to(torch.float32)
         # [B, S, E]
         embed = self.embedding(inputs)
@@ -75,6 +81,9 @@ class NonAttentiveTacotron(nn.Module):
         preproc = self.prenet(embed) * text_mask[..., None]
         # [B, S, C]
         encodings = self.cbhg(preproc)
+        # [B, S, C + E]
+        encodings = torch.cat([
+            encodings, spkembed[:, None].repeat(1, seqlen, 1)], dim=-1)
 
         ## 3. Decoding
         if mel is not None:
@@ -84,7 +93,7 @@ class NonAttentiveTacotron(nn.Module):
             mellen = torch.ceil(mellen / self.reduction.factor).to(torch.long)
         else:
             remains = None
-        # [B, T // F, C], [B, T // F, S], [B], [B]
+        # [B, T // F, C + E], [B, T // F, S], [B], [B]
         upsampled, align, predlen, factor = self.upsampler(encodings, text_mask, mellen)
         # [B, T // F, F x M]
         mel = self.decoder(upsampled, mel)
