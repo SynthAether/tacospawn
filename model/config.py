@@ -1,12 +1,14 @@
 class Config:
     """Model configuration.
     """
-    def __init__(self, vocabs: int):
+    def __init__(self, vocabs: int, mel: int):
         """Initializer.
         Args:
             vocabs: the size of the dictionary.
+            mel: the number of the mel-scale filterbank bins.
         """
         self.vocabs = vocabs
+        self.mel = mel
 
         # channel info
         self.embeddings = 256
@@ -26,7 +28,7 @@ class Config:
         self.upsampler_layers = 2
 
         # decoder
-        self.reduction = 2
-
-        self.dec_prenet = [256]
+        self.dec_prenet = [256, 128]
         self.dec_dropout = 0.5
+        self.dec_reduction = 2
+        self.dec_layers = 2
