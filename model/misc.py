@@ -71,24 +71,22 @@ class Reduction(nn.Module):
         return recovered
 
 
-class PositionalEncodings(nn.Module):
+class PositionalEncodings:
     """Positional encodings from Vaswani et al., 2017.
     """
-    def __init__(self, channels: int, size: Optional[int] = None):
+    def __init__(self, channels: int, size: int):
         """Initializer.
         Args:
             channels: size of the embeddings.
-            size: size of the initial cache, if None, set as on-demand.
+            size: size of the initial cache.
         """
         super().__init__()
         self.channels = channels
-        # set for on-demand
-        assert not size or size > 0, 'size should be None or positives.'
-        self.size = size or 1
-        # caching
-        self.register_buffer('cache', self.generate(size))
+        self.size = size
+        # caching, it will be not collected by state_dict.
+        self.cache = self.generate(size)
 
-    def call(self, size: int) -> torch.Tensor:
+    def __call__(self, size: int) -> torch.Tensor:
         """Return cached positional encodings.
         Args:
             size: length of the pe.
@@ -98,7 +96,7 @@ class PositionalEncodings(nn.Module):
         if size <= self.size:
             return self.cache[:size]
         # generate new cache
-        self.register_buffer('cache', self.generate(size))
+        self.cache = self.generate(size)
         return self.cache
 
     def generate(self, size: int) -> torch.Tensor:
