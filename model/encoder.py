@@ -33,7 +33,7 @@ class Encoder(nn.Module):
         Args;
             inputs: [torch.long; [B, S]], text symbol sequences.
         Returns:
-            [torch.float32; [B, C x 2, S]], CBHG features.
+            [torch.float32; [B, S, C x 2]], CBHG features.
         """
         # [B, S, E]
         embed = self.embedding(inputs)
