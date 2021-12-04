@@ -31,9 +31,9 @@ class Encoder(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """Encode text tokens.
         Args;
-            inputs: [B, S], text symbol sequences.
+            inputs: [torch.long; [B, S]], text symbol sequences.
         Returns:
-            [B, C x 2, S], CBHG features.
+            [torch.float32; [B, C x 2, S]], CBHG features.
         """
         # [B, S, E]
         embed = self.embedding(inputs)
