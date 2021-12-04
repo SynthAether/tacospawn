@@ -70,6 +70,7 @@ class NonAttentiveTacotron(nn.Module):
             mellen: [torch.long; [B]], spectrogram lengths.
             auxiliary: auxiliary informations.
                 align: [torch.float32; [B, T // F, S]], attention alignments.
+                durations: [torch.float32; [B, S]], durations.
                 factor: [torch.float32; [B]], size ratio between ground-truth and predicted lengths.
         """
         ## 1. Text encoding
