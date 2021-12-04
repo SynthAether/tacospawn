@@ -13,6 +13,7 @@ class Config:
         # channel info
         self.embeddings = 256
         self.channels = 256
+        self.spkembed = 128
 
         # encoder
         self.enc_prenet = [256]
