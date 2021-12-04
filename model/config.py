@@ -10,7 +10,7 @@ class Config:
 
         # channel info
         self.embeddings = 256
-        self.channels = 128
+        self.channels = 256
 
         # encoder
         self.enc_prenet = [256]
@@ -21,6 +21,9 @@ class Config:
         self.cbhg_pool = 2
         self.cbhg_kernels = 3
         self.cbhg_highways = 4
+
+        # upsampler
+        self.upsampler_layers = 2
 
         # decoder
         self.reduction = 2
