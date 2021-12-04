@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -68,3 +69,56 @@ class Reduction(nn.Module):
             # [B, T + R, C] -> [B, T, C]
             recovered = recovered[:, :-remains]
         return recovered
+
+
+class PositionalEncodings(nn.Module):
+    """Positional encodings from Vaswani et al., 2017.
+    """
+    def __init__(self, channels: int, size: Optional[int] = None):
+        """Initializer.
+        Args:
+            channels: size of the embeddings.
+            size: size of the initial cache, if None, set as on-demand.
+        """
+        super().__init__()
+        self.channels = channels
+        # set for on-demand
+        assert not size or size > 0, 'size should be None or positives.'
+        self.size = size or 1
+        # caching
+        self.register_buffer('cache', self.generate(size))
+
+    def call(self, size: int) -> torch.Tensor:
+        """Return cached positional encodings.
+        Args:
+            size: length of the pe.
+        Returns:
+            [torch.float32; [T, C]], sinusoidal positional encodings.
+        """
+        if size <= self.size:
+            return self.cache[:size]
+        # generate new cache
+        self.register_buffer('cache', self.generate(size))
+        return self.cache
+
+    def generate(self, size: int) -> torch.Tensor:
+        """Generate positional encodings.
+        Args:
+            size: length of the pe.
+        Returns:
+           [torch.float32; [T, C]], sinusoidal positional encodings.
+        """
+        with torch.no_grad():
+            # [T]
+            pos = torch.arange(size)
+            # [C // 2]
+            i = torch.arange(0, self.channels, 2)
+            # [C // 2]
+            denom = torch.exp(-np.log(10000) * i / self.channels)
+            # [T, C//2]
+            context = pos[:, None] * denom[None]
+            # [T, C//2, 2]
+            pe = torch.stack([torch.sin(context), torch.cos(context)], dim=-1)
+            # [T, C]
+            pe = pe.view(size, self.channels)
+        return pe
