@@ -31,6 +31,9 @@ class Config:
         # upsampler
         self.upsampler_layers = 2
 
+        # positional encodings
+        self.pe = 32
+
         # decoder
         self.dec_prenet = [256, 128]
         self.dec_dropout = 0.5
