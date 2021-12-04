@@ -28,13 +28,13 @@ class Upsampler(nn.Module):
             Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Upsampling inputs w.r.t. predicted durations.
         Args:
-            inputs: [B, S, C x 2], input tensor.
-            mask: [B, S], binary sequence mask.
-            lengths: [B], target spectrogram lengths, if provided.
+            inputs: [torch.float32; [B, S, C x 2]], input tensor.
+            mask: [torch.float32; [B, S]], binary sequence mask.
+            lengths: [torch.long; [B]], target spectrogram lengths, if provided.
         Returns:
-            upsampled: [B, T, C x 2], upsampled feature map.
-            lengths: [B], spectrogram lengths.
-            factor: [B], residual lengths.
+            upsampled: [torch.float32; [B, T, C x 2]], upsampled feature map.
+            lengths: [torch.long; [B]], spectrogram lengths.
+            factor: [torch.float32; [B]], residual lengths.
         """
         x = inputs
         for bigru in self.bigrus:
