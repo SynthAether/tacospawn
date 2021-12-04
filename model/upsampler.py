@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -27,7 +27,7 @@ class Upsampler(nn.Module):
                 inputs: torch.Tensor,
                 mask: torch.Tensor,
                 lengths: Optional[torch.Tensor] = None) -> \
-            Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+            Tuple[torch.Tensor, torch.Tensor, Dict[str, Optional[torch.Tensor]]]:
         """Upsampling inputs w.r.t. predicted durations.
         Args:
             inputs: [torch.float32; [B, S, I]], input tensor.
@@ -35,9 +35,11 @@ class Upsampler(nn.Module):
             lengths: [torch.long; [B]], target spectrogram lengths, if provided.
         Returns:
             upsampled: [torch.float32; [B, T, I]], upsampled feature map.
-            align: [torch.float32; [B, T, S]], alignment.
             lengths: [torch.long; [B]], spectrogram lengths.
-            factor: [torch.float32; [B]], residual lengths.
+            auxiliaries: auxiliary outputs.
+                align: [torch.float32; [B, T, S]], alignment.
+                durations: [torch.float32; [B, S]], durations.
+                factor: [torch.float32; [B]], residual lengths.
         """
         # [B, S, C x 2]
         x = self.proj_in(inputs)
@@ -79,4 +81,5 @@ class Upsampler(nn.Module):
         # [B, T, I]
         upsampled = torch.matmul(align, inputs)
         # [B, T, I], [B], [B]
-        return upsampled, align, lengths, factor
+        return upsampled, lengths, {
+            'align': align, 'durations': dur, 'factor': factor}
