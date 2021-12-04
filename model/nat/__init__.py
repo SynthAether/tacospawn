@@ -6,10 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .cbhg import Cbhg
-from .config import Config
 from .decoder import Decoder
 from .misc import PositionalEncodings, Prenet, Reduction
 from .upsampler import Upsampler
+from ..config import Config
 
 
 class NonAttentiveTacotron(nn.Module):
