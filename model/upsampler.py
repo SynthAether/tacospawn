@@ -28,20 +28,23 @@ class Upsampler(nn.Module):
             Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Upsampling inputs w.r.t. predicted durations.
         Args:
-            inputs: [torch.float32; [B, S, C x 2]], input tensor.
+            inputs: [torch.float32; [B, S, C]], input tensor.
             mask: [torch.float32; [B, S]], binary sequence mask.
             lengths: [torch.long; [B]], target spectrogram lengths, if provided.
         Returns:
-            upsampled: [torch.float32; [B, T, C x 2]], upsampled feature map.
+            upsampled: [torch.float32; [B, T, C]], upsampled feature map.
+            align: [torch.float32; [B, T, S]], alignment.
             lengths: [torch.long; [B]], spectrogram lengths.
             factor: [torch.float32; [B]], residual lengths.
         """
         x = inputs
         for bigru in self.bigrus:
-            # [B, S, C x 2]
+            # [B, S, C]
             x, _ = bigru(x)
         # [B, S, 1], [B, S, 1]
         logdur, range_ = self.proj(x).chunk(2, dim=-1)
+        # [B, S], [B, S]
+        logdur, range_ = logdur.squeeze(dim=-1), range_.squeeze(dim=-1)
         # re-ranging
         if lengths is not None:
             # [B]
@@ -51,11 +54,10 @@ class Upsampler(nn.Module):
             logdur = logdur + factor[:, None]
         else:
             factor = None
-            # [B]
-            lengths = torch.exp(lengths).sum(dim=-1)
-        # [B, S], masking
-        dur = torch.exp(logdur.squeeze(dim=-1)) * mask
-        range_ = F.softplus(range_.squeeze(dim=-1)) * mask
+        # [B, S], [B, S], masking
+        dur, range_ = torch.exp(logdur) * mask, F.softplus(range_) * mask
+        # [B]
+        lengths = lengths or dur.sum(dim=-1)
         # [B, S]
         centers = torch.cumsum(dur) - 0.5 * dur
         # [T]
@@ -70,6 +72,8 @@ class Upsampler(nn.Module):
             (timesteps[None, :, None] - centers[:, None]) / range_[:, None])
         # [B, T, S]
         align = align / (
-            (align * mask[:, None]).sum(dim=-1, keepdim=True) + 1e-5)
+            (align * mask[:, None]).sum(dim=-1, keepdim=True) + 1e-5) * attn_mask
+        # [B, T, C]
+        upsampled = torch.matmul(align, inputs)
         # [B, T, S], [B], [B]
-        return align * attn_mask, lengths, factor
+        return upsampled, align, lengths, factor
