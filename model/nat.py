@@ -6,7 +6,7 @@ import torch.nn as nn
 from .cbhg import Cbhg
 from .config import Config
 from .decoder import Decoder
-from .misc import Prenet, Reduction
+from .misc import PositionalEncodings, Prenet, Reduction
 from .upsampler import Upsampler
 
 
@@ -39,8 +39,10 @@ class NonAttentiveTacotron(nn.Module):
             config.channels // 2,
             config.upsampler_layers)
 
+        self.pe = PositionalEncodings(self.pe, 30)
+
         self.decoder = Decoder(
-            config.channels + config.spkembed,
+            config.channels + config.spkembed + config.pe,
             config.channels,
             config.dec_prenet,
             config.dec_dropout,
@@ -93,10 +95,12 @@ class NonAttentiveTacotron(nn.Module):
             mellen = torch.ceil(mellen / self.reduction.factor).to(torch.long)
         else:
             remains = None
-        # [B, T // F, C + E], [B, T // F, S], [B], [B]
-        upsampled, align, predlen, factor = self.upsampler(encodings, text_mask, mellen)
+        # [B, T // F, C + E], [B], _
+        upsampled, predlen, aux = self.upsampler(encodings, text_mask, mellen)
+        # [B, T // F, P]
+        pe = self.tokenwise_posenc(aux['durations'], predlen)
         # [B, T // F, F x M]
-        mel = self.decoder(upsampled, mel)
+        mel = self.decoder(torch.cat([upsampled, pe], dim=-1), mel)
 
         ## 4. Unfold
         if mellen is None:
@@ -108,5 +112,14 @@ class NonAttentiveTacotron(nn.Module):
             torch.arange(mel.size(1), device=mel.device)[None]
             < mellen[:, None]).to(torch.float32)
         # [B, T, M]
-        return mel * mel_mask[..., None], mellen, {
-            'align': align, 'factor': factor}
+        return mel * mel_mask[..., None], mellen, aux
+
+    def tokenwise_posenc(self, durations: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        """Generate tokenwise positional encodings.
+        Args:
+            durations: [torch.float32; [B, S]], durations, not quantized.
+            lengths: [torch.long, [B]], lengths.
+        Returns:
+            [torch.float32; [B, T, C]], token-wise positional encodings.
+        """
+
