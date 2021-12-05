@@ -41,7 +41,7 @@ class NonAttentiveTacotron(nn.Module):
             config.channels // 2,
             config.upsampler_layers)
 
-        self.pe = PositionalEncodings(self.pe, 30)
+        self.posenc = PositionalEncodings(config.pe, 30)
 
         self.decoder = Decoder(
             config.channels + config.spkembed + config.pe,
@@ -52,7 +52,7 @@ class NonAttentiveTacotron(nn.Module):
             config.reduction * config.mel)
 
     def forward(self,
-                inputs: torch.Tensor,
+                text: torch.Tensor,
                 textlen: torch.Tensor,
                 spkembed: torch.Tensor,
                 mel: Optional[torch.Tensor] = None,
@@ -60,7 +60,7 @@ class NonAttentiveTacotron(nn.Module):
             Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         """Encode text tokens.
         Args;
-            inputs: [torch.long; [B, S]], text symbol sequences.
+            text: [torch.long; [B, S]], text symbol sequences.
             textlen: [torch.long; [B]], sequence lengths.
             spkembed: [torch.float32; [B, E]], speaker embeddings.
             mel: [torch.float32; [B, T, M]], mel-spectrogram, if provided.
@@ -75,13 +75,13 @@ class NonAttentiveTacotron(nn.Module):
         """
         ## 1. Text encoding
         # S
-        seqlen = inputs.size(1)
+        seqlen = text.size(1)
         # [B, S]
         text_mask = (
-            torch.arange(seqlen, device=inputs.device)[None]
+            torch.arange(seqlen, device=text.device)[None]
             < textlen[:, None]).to(torch.float32)
         # [B, S, E]
-        embed = self.embedding(inputs)
+        embed = self.embedding(text)
         # [B, S, C // 2], masking for initial convolution of CBHG.
         preproc = self.prenet(embed) * text_mask[..., None]
         # [B, S, C]
@@ -128,9 +128,9 @@ class NonAttentiveTacotron(nn.Module):
         # [B, S], quantize
         cumdur = torch.round(torch.cumsum(durations, dim=-1)).to(torch.long)
         # [B, S]
-        durations = cumdur - F.pad(cumdur, [1, 0])
+        durations = cumdur - F.pad(cumdur, [1, -1])
         # [K, C]
-        cache = self.pe(durations.max())
+        cache = self.posenc(durations.max())
         # [B, T, C]
         pe = torch.zeros(
             durations.size(0), maxlen, cache.size(-1), device=cache.device)
