@@ -62,7 +62,7 @@ class Upsampler(nn.Module):
         if lengths is None:
             factor = None
             # [B]
-            lengths = dur.sum(dim=-1)
+            lengths = dur.sum(dim=-1).to(torch.long)
         # [B, S]
         centers = torch.cumsum(dur, dim=-1) - 0.5 * dur
         # [T]
