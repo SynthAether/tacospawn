@@ -27,13 +27,13 @@ class Prenet(nn.Sequential):
 class Reduction(nn.Module):
     """Fold the inupts, applying reduction factor.
     """
-    def __init__(self, reduction: int):
+    def __init__(self, factor: int):
         """Initializer.
         Args:
-            reduction: reduction factor.
+            factor: reduction factor.
         """
         super().__init__()
-        self.reduction = reduction
+        self.factor = factor
 
     def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, Optional[int]]:
         """Fold the inputs, apply reduction factor.
@@ -44,15 +44,15 @@ class Reduction(nn.Module):
         """
         # B, T, C
         bsize, timesteps, channels = inputs.shape
-        if timesteps % self.reduction > 0:
-            remains = self.reduction - timesteps % self.reduction
+        if timesteps % self.factor > 0:
+            remains = self.factor - timesteps % self.factor
             # [B, T + R, C]
             inputs = F.pad(inputs, [0, 0, 0, remains])
         else:
             # no remains
             remains = None
         # [B, T // F, F x C]
-        return inputs.reshape(bsize, -1, self.reduction * channels), remains
+        return inputs.reshape(bsize, -1, self.factor * channels), remains
 
     def unfold(self, inputs: torch.Tensor, remains: Optional[int]) -> torch.Tensor:
         """Recover the inputs, unfolding.
@@ -64,14 +64,14 @@ class Reduction(nn.Module):
         # B, _, F x C
         bsize, _, channels = inputs.shape
         # [B, T, C]
-        recovered = inputs.reshape(bsize, -1, channels // self.reduction)
+        recovered = inputs.reshape(bsize, -1, channels // self.factor)
         if remains is not None:
             # [B, T + R, C] -> [B, T, C]
             recovered = recovered[:, :-remains]
         return recovered
 
 
-class PositionalEncodings:
+class PositionalEncodings(nn.Module):
     """Positional encodings from Vaswani et al., 2017.
     """
     def __init__(self, channels: int, size: int):
@@ -83,10 +83,15 @@ class PositionalEncodings:
         super().__init__()
         self.channels = channels
         self.size = size
-        # caching, it will be not collected by state_dict.
-        self.cache = self.generate(size)
+        # caching
+        self.register_buffer('cache', self.generate(size))
 
-    def __call__(self, size: int) -> torch.Tensor:
+    def _load_from_state_dict(self):
+        """Override load_state_dict for preventing cache load.
+        """
+        pass
+
+    def forward(self, size: int) -> torch.Tensor:
         """Return cached positional encodings.
         Args:
             size: length of the pe.
@@ -96,7 +101,8 @@ class PositionalEncodings:
         if size <= self.size:
             return self.cache[:size]
         # generate new cache
-        self.cache = self.generate(size)
+        self.size = size
+        self.register_buffer('cache', self.generate(size))
         return self.cache
 
     def generate(self, size: int) -> torch.Tensor:
