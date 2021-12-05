@@ -53,18 +53,18 @@ class Upsampler(nn.Module):
         # re-ranging
         if lengths is not None:
             # [B]
-            factor = torch.log(lengths) - torch.logsumexp(
+            factor = torch.log(lengths.to(torch.float32)) - torch.logsumexp(
                 logdur.masked_fill(~mask.to(torch.bool), -np.inf), dim=-1)
             # [B, S]
             logdur = logdur + factor[:, None]
-        else:
-            factor = None
         # [B, S], [B, S], masking
         dur, range_ = torch.exp(logdur) * mask, F.softplus(range_) * mask
-        # [B]
-        lengths = lengths or dur.sum(dim=-1)
+        if lengths is None:
+            factor = None
+            # [B]
+            lengths = dur.sum(dim=-1)
         # [B, S]
-        centers = torch.cumsum(dur) - 0.5 * dur
+        centers = torch.cumsum(dur, dim=-1) - 0.5 * dur
         # [T]
         timesteps = torch.arange(
             lengths.max(), dtype=torch.float32, device=centers.device)
