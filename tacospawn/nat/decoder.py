@@ -107,10 +107,12 @@ class Decoder(nn.Module):
             GRU, cell-level operation.
         """
         cell = nn.GRUCell(gru.input_size, gru.hidden_size, bias=gru.bias)
-        # weight copy
-        cell.weight_ih = gru.weight_ih_l0
-        cell.weight_hh = gru.weight_hh_l0
-        if gru.bias:
-            cell.bias_ih = gru.bias_ih_l0
-            cell.bias_hh = gru.bias_hh_l0
+        cell.to(gru.weight_ih_l0.device)
+        with torch.no_grad():
+            # weight copy
+            cell.weight_ih.copy_(gru.weight_ih_l0)
+            cell.weight_hh.copy_(gru.weight_hh_l0)
+            if gru.bias:
+                cell.bias_ih.copy_(gru.bias_ih_l0)
+                cell.bias_hh.copy_(gru.bias_hh_l0)
         return cell
