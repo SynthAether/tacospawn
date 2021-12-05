@@ -71,7 +71,8 @@ class Decoder(nn.Module):
         bsize = inputs.size(0)
         # [B, C], L x [B, C], prepare hiddens
         attnhidd = torch.zeros(bsize, attncell.hidden_size, device=inputs.device)
-        hiddens = [torch.zeros(bsize, gru.hidden_size) for gru in self.grus]
+        hiddens = [torch.zeros(bsize, gru.hidden_size, device=inputs.device)
+                   for gru in self.grus]
         # [B, M], start frame
         frame = torch.zeros(bsize, self.proj.out_features, device=inputs.device)
         # T x [B, M]
@@ -107,12 +108,10 @@ class Decoder(nn.Module):
             GRU, cell-level operation.
         """
         cell = nn.GRUCell(gru.input_size, gru.hidden_size, bias=gru.bias)
-        cell.to(gru.weight_ih_l0.device)
-        with torch.no_grad():
-            # weight copy
-            cell.weight_ih.copy_(gru.weight_ih_l0)
-            cell.weight_hh.copy_(gru.weight_hh_l0)
-            if gru.bias:
-                cell.bias_ih.copy_(gru.bias_ih_l0)
-                cell.bias_hh.copy_(gru.bias_hh_l0)
+        # weight copy
+        cell.weight_ih = gru.weight_ih_l0
+        cell.weight_hh = gru.weight_hh_l0
+        if gru.bias:
+            cell.bias_ih = gru.bias_ih_l0
+            cell.bias_hh = gru.bias_hh_l0
         return cell
