@@ -43,7 +43,7 @@ class TacoSpawn(nn.Module):
             modalid: [torch.long; [B]], modal id, if provided,
                 if both spkid and modalid provided, return sample based on spkid.
         Returns:
-            mel: [torch.float32; [B, T, B]], predicted spectrogram.
+            mel: [torch.float32; [B, T, M]], predicted spectrogram.
             mellen: [torch.long; [B]], spectrogram lengths.
             auxiliary: auxiliary informations.
                 spkembed: [torch.float32; [B, E]], sampled speaker embedding.
@@ -59,7 +59,9 @@ class TacoSpawn(nn.Module):
             spkembed = self.prior_mean(modalid)
         else:
             spkembed = self.prior_sample(text.size(0))
-        return self.nat(text, textlen, spkembed, mel, mellen)
+        # [B, T, M], [B], _
+        mel, mellen, aux = self.nat(text, textlen, spkembed, mel, mellen)
+        return mel, mellen, {'spkembed': spkembed, **aux}
 
     def spkprior(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Speaker prior.
