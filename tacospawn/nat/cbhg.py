@@ -27,7 +27,7 @@ class Cbhg(nn.Module):
                 nn.ReLU())
             for k in range(1, banks + 1)])
         self.proj = nn.Sequential(
-            nn.MaxPool1d(pool, padding=pool // 2),
+            nn.MaxPool1d(pool, stride=1, padding=pool // 2),
             nn.Conv1d(banks * channels, channels, kernels, padding=kernels // 2),
             nn.BatchNorm1d(channels),
             nn.ReLU(),
