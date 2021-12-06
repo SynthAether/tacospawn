@@ -36,6 +36,16 @@ class LibriTTS(DataReader):
         """
         return self.preprocessor
 
+    @staticmethod
+    def count_speakers(data_dir: str) -> int:
+        """Count the number of speakers.
+        Args:
+            data_dir: target dataset directory.
+        Returns:
+            the number of the speakers.
+        """
+        return len(os.listdir(data_dir))
+
     def load_data(self, data_dir: str) -> Tuple[List[str], Callable]:
         """Load audio with tf apis.
         Args:
