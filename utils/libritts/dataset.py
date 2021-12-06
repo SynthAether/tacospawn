@@ -2,12 +2,22 @@ from typing import List, Tuple
 
 import numpy as np
 
-from speechset import AcousticDataset
+from speechset import AcousticDataset, Config
+
+from .reader import LibriTTS
 
 
 class LibriTTSDataset(AcousticDataset):
     """Dataset for text to acoustic features.
     """
+    def __init__(self, data_dir: str, config: Config):
+        """Initializer.
+        Args:
+            data_dir: path to the libritts datasets.
+            config: configurations.
+        """
+        super().__init__(LibriTTS(data_dir), config)
+
     def normalize(self, sid: int, text: str, speech: np.ndarray) \
             -> Tuple[int, np.ndarray, np.ndarray]:
         """Normalize datum.
