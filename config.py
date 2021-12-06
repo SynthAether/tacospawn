@@ -10,12 +10,14 @@ class TrainConfig:
         # optimizer
         self.learning_rate = 1e-3
         self.beta1 = 0.9
-        self.beta2 = 0.99
-        self.eps = 1e-9
+        self.beta2 = 0.999
+        self.eps = 1e-8
 
         # 13000:100
         self.split = 13000
-        self.bufsiz = 48
+        self.shuffle = True
+        self.num_workers = 4
+        self.pin_memory = True
 
         # train iters
         self.epoch = 100
