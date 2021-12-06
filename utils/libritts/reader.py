@@ -48,7 +48,7 @@ class LibriTTS(DataReader):
         """
         # generate file lists
         paths, trans = [], {}
-        for sid, speakers in os.listdir(data_dir):
+        for sid, speakers in enumerate(os.listdir(data_dir)):
             for chapters in os.listdir(os.path.join(data_dir, speakers)):
                 path = os.path.join(data_dir, speakers, chapters)
                 # read transcription
