@@ -19,11 +19,14 @@ class TacoSpawn(nn.Module):
         super().__init__()
         self.nat = NonAttentiveTacotron(config)
         # unconditional prior space, mean and log stddev
+        self.num_modals = config.modal
         self.priorbuffer = nn.Parameter(
             torch.randn(config.modal, config.spkembed * 2 + 1),
             requires_grad=True)
         # speaker embedding
-        self.spkembed = nn.Embedding(config.speakers, config.spkembed)
+        self.spkbuffer = nn.Parameter(
+            torch.randn(config.speakers, config.spkembed * 2 + 1),
+            requires_grad=True)
 
     def forward(self,
                 text: torch.Tensor,
@@ -31,7 +34,8 @@ class TacoSpawn(nn.Module):
                 mel: Optional[torch.Tensor] = None,
                 mellen: Optional[torch.Tensor] = None,
                 spkid: Optional[torch.Tensor] = None,
-                modalid: Optional[torch.Tensor] = None) -> \
+                modalid: Optional[torch.Tensor] = None,
+                sample: bool = True) -> \
             Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         """Encode text tokens.
         Args;
@@ -42,6 +46,7 @@ class TacoSpawn(nn.Module):
             spkid: [torch.long; [B]], speaker id, if provided.
             modalid: [torch.long; [B]], modal id, if provided,
                 if both spkid and modalid provided, return sample based on spkid.
+            sample: whether sample from distribution or use mean.
         Returns:
             mel: [torch.float32; [B, T, M]], predicted spectrogram.
             mellen: [torch.long; [B]], spectrogram lengths.
@@ -52,13 +57,19 @@ class TacoSpawn(nn.Module):
                 factor: [torch.float32; [B]], size ratio between ground-truth and predicted lengths.
         """
         # sample speaker embedding
+        if spkid is None and modalid is None:
+            # sample random modal
+            modalid = torch.randint(
+                self.num_modals, (text.shape[0],), device=text.device)
+
+        # [B], [K, E + 1]
+        ids, buffer = (spkid, self.spkbuffer) \
+            if spkid is not None else (modalid, self.priorbuffer)
+        # [K], [K, E], [K, E]
+        _, mean, std = self.parametrize(buffer)
         # [B, E]
-        if spkid is not None:
-            spkembed = self.spkembed(spkid)
-        elif modalid is not None:
-            spkembed = self.prior_mean(modalid)
-        else:
-            spkembed = self.prior_sample(text.size(0))
+        spkembed = mean[ids] + torch.randn_like(std[ids]) * (
+            std[ids] if sample else 0.)
         # [B, T, M], [B], _
         mel, mellen, aux = self.nat(text, textlen, spkembed, mel, mellen)
         return mel, mellen, {'spkembed': spkembed, **aux}
@@ -84,55 +95,20 @@ class TacoSpawn(nn.Module):
         if optim is not None:
             optim.load_state_dict(states['optim'])
 
-    def spkprior(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def parametrize(self, buffer: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Speaker prior.
+        Args:
+            buffer: [torch.float32; [K, E x 2 + 1]], distribution weights.
         Returns:
             weight: [torch.float32; [K]], weights of each modals.
             mean: [torch.float32; [K, E]], mean vectors.
             std: [torch.float32; [K, E]], standard deviations.
         """
         # [K]
-        weight = torch.softmax(self.priorbuffer[:, 0], dim=0)
+        weight = torch.softmax(buffer[:, 0], dim=0)
         # [K, E], [K, E]
-        mean, logstd = self.priorbuffer[:, 1:].chunk(2, dim=-1)
+        mean, logstd = buffer[:, 1:].chunk(2, dim=-1)
         # [K, E]
         std = F.softplus(logstd)
         # [K], [K, E], [K, E]
         return weight, mean, std
-
-    def prior_mean(self, modals: torch.Tensor) -> torch.Tensor:
-        """Sample from prior mean.
-        Args:
-            modals: [torch.long; [B]], modal indices.
-        Returns:
-            [torch.float32; [B, E]], mean sampled.
-        """
-        _, mean, _ = self.spkprior()
-        return mean[modals]
-
-    def prior_sample(self,
-                     batch: Optional[int] = None,
-                     noise: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Sample from prior.
-        Args:
-            batch: batch size of the sample.
-            noise: [torch.float32; [B, K, E]], reparametrization basis,
-                if both batch and noise are not None, return sample based on noise.
-        Returns:
-            [torch.float32; [B, E]], sampled prior.
-        Exceptions:
-            AssertionError, both batch and noise are None.
-        """
-        assert batch is None and noise is None, \
-            'both batch and noise are None'
-        # [K], [K, E], [K, E]
-        weight, mean, std = self.spkprior()
-        # K, E
-        modal, embed = mean.shape
-        if noise is None:
-            # [B, K, E]
-            noise = torch.zeros(batch, modal, embed, device=self.weight.device)
-        # [B, K, E]
-        reparam = mean[None] + std[None] * noise
-        # [B, E]
-        return (reparam * weight[None, :, None]).sum(dim=1)
