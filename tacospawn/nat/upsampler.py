@@ -73,11 +73,11 @@ class Upsampler(nn.Module):
         # [B, T, S]
         attn_mask = mel_mask[..., None] * mask[:, None]
         # [B, T, S]
-        align = torch.square(
+        unweighted = -torch.square(
             (timesteps[None, :, None] - centers[:, None]) / (range_[:, None] + 1e-5))
+        unweighted.masked_fill_(~mask[:, None].to(torch.bool), -np.inf)
         # [B, T, S]
-        align = align / (
-            (align * mask[:, None]).sum(dim=-1, keepdim=True) + 1e-5) * attn_mask
+        align = torch.softmax(unweighted, dim=-1) * attn_mask
         # [B, T, I]
         upsampled = torch.matmul(align, inputs)
         # [B, T, I], [B], [B]
