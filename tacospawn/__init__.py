@@ -18,8 +18,10 @@ class TacoSpawn(nn.Module):
         """
         super().__init__()
         self.nat = NonAttentiveTacotron(config)
+        # constants
+        self.modal = config.modal
+        self.spkembed = config.spkembed
         # unconditional prior space, mean and log stddev
-        self.num_modals = config.modal
         self.priorbuffer = nn.Parameter(
             torch.randn(config.modal, config.spkembed * 2 + 1),
             requires_grad=True)
@@ -54,13 +56,15 @@ class TacoSpawn(nn.Module):
                 spkembed: [torch.float32; [B, E]], sampled speaker embedding.
                 align: [torch.float32; [B, T // F, S]], attention alignments.
                 durations: [torch.float32; [B, S]], durations.
-                factor: [torch.float32; [B]], size ratio between ground-truth and predicted lengths.
+                factor: [torch.float32; [B]],
+                    size ratio between ground-truth and predicted lengths.
         """
+        # B
+        bsize = text.shape[0]
         # sample speaker embedding
         if spkid is None and modalid is None:
             # sample random modal
-            modalid = torch.randint(
-                self.num_modals, (text.shape[0],), device=text.device)
+            modalid = torch.randint(self.modal, (bsize,), device=text.device)
 
         # [B], [K, E + 1]
         ids, buffer = (spkid, self.spkbuffer) \
@@ -68,8 +72,9 @@ class TacoSpawn(nn.Module):
         # [K], [K, E], [K, E]
         _, mean, std = self.parametrize(buffer)
         # [B, E]
-        spkembed = mean[ids] + torch.randn_like(std[ids]) * (
-            std[ids] if sample else 0.)
+        noise = torch.randn(bsize, self.spkembed, device=std.device)
+        # [B, E]
+        spkembed = mean[ids] + noise * (std[ids] if sample else 0.)
         # [B, T, M], [B], _
         mel, mellen, aux = self.nat(text, textlen, spkembed, mel, mellen)
         return mel, mellen, {'spkembed': spkembed, **aux}
