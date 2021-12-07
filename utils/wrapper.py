@@ -59,9 +59,6 @@ class TrainingWrapper:
         # [B, E]
         gmm = (weight[None, :, None] * torch.exp(ll)).sum(dim=1)
         likelihood = torch.log(gmm + 1e-5).mean()
-        # likelihood = weight * 
-        # likelihood = likelihood.mean()
-        likelihood = 0.
         # 4. entropy loss
         mean, std = aux['speaker']['mean'], aux['speaker']['std']
         entropy = -2 * torch.log(std + 1e-5) - torch.square((sample - mean) / (std + 1e-5))
