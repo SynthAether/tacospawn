@@ -84,7 +84,7 @@ class PositionalEncodings(nn.Module):
         self.channels = channels
         self.size = size
         # caching
-        self.register_buffer('cache', self.generate(size))
+        self.register_buffer('cache', self.generate(size, 'cpu'))
 
     def _load_from_state_dict(self):
         """Override load_state_dict for preventing cache load.
@@ -102,21 +102,22 @@ class PositionalEncodings(nn.Module):
             return self.cache[:size]
         # generate new cache
         self.size = size
-        self.register_buffer('cache', self.generate(size))
+        self.register_buffer('cache', self.generate(size, device=self.cache.device))
         return self.cache
 
-    def generate(self, size: int) -> torch.Tensor:
+    def generate(self, size: int, device: torch.device) -> torch.Tensor:
         """Generate positional encodings.
         Args:
             size: length of the pe.
+            device: target computing device.
         Returns:
            [torch.float32; [T, C]], sinusoidal positional encodings.
         """
         with torch.no_grad():
             # [T]
-            pos = torch.arange(size)
+            pos = torch.arange(size, device=device)
             # [C // 2]
-            i = torch.arange(0, self.channels, 2)
+            i = torch.arange(0, self.channels, 2, device=device)
             # [C // 2]
             denom = torch.exp(-np.log(10000) * i / self.channels)
             # [T, C//2]
