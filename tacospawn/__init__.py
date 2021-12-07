@@ -35,8 +35,8 @@ class TacoSpawn(nn.Module):
                 textlen: torch.Tensor,
                 mel: Optional[torch.Tensor] = None,
                 mellen: Optional[torch.Tensor] = None,
-                spkid: Optional[torch.Tensor] = None,
-                modalid: Optional[torch.Tensor] = None,
+                sid: Optional[torch.Tensor] = None,
+                mid: Optional[torch.Tensor] = None,
                 sample: bool = True) -> \
             Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         """Encode text tokens.
@@ -45,9 +45,9 @@ class TacoSpawn(nn.Module):
             textlen: [torch.long; [B]], sequence lengths.
             mel: [torch.float32; [B, T, M]], mel-spectrogram, if provided.
             mellen: [torch.long; [B]], spectrogram lengths, if provided.
-            spkid: [torch.long; [B]], speaker id, if provided.
-            modalid: [torch.long; [B]], modal id, if provided,
-                if both spkid and modalid provided, return sample based on spkid.
+            sid: [torch.long; [B]], speaker id, if provided.
+            mid: [torch.long; [B]], modal id, if provided,
+                if both sid and mid provided, return sample based on sid.
             sample: whether sample from distribution or use mean.
         Returns:
             mel: [torch.float32; [B, T, M]], predicted spectrogram.
@@ -62,13 +62,13 @@ class TacoSpawn(nn.Module):
         # B
         bsize = text.shape[0]
         # sample speaker embedding
-        if spkid is None and modalid is None:
+        if sid is None and mid is None:
             # sample random modal
-            modalid = torch.randint(self.modal, (bsize,), device=text.device)
+            mid = torch.randint(self.modal, (bsize,), device=text.device)
 
         # [B], [K, E + 1]
-        ids, buffer = (spkid, self.spkbuffer) \
-            if spkid is not None else (modalid, self.priorbuffer)
+        ids, buffer = (sid, self.spkbuffer) \
+            if sid is not None else (mid, self.priorbuffer)
         # [K], [K, E], [K, E]
         _, mean, std = self.parametrize(buffer)
         # [B, E]
