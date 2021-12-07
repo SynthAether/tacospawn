@@ -62,4 +62,4 @@ class LibriTTSDataset(AcousticDataset):
         # [B, T, mel]
         mel = np.stack(
             [np.pad(spec, [[0, mellen.max() - len(spec)], [0, 0]]) for _, _, spec in bunch])
-        return sid, mel, text, textlen, mellen
+        return sid, text, mel, textlen, mellen
