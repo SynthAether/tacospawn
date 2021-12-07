@@ -3,3 +3,7 @@ __pycache__
 
 # custom
 test.py
+
+# train
+ckpt
+log
