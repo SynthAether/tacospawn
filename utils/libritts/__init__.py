@@ -1,3 +1,3 @@
 from speechset import Config
 
-from .dataset import LibriTTSDataset
+from .dataset import LibriTTS, LibriTTSDataset
