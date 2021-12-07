@@ -97,12 +97,18 @@ class Trainer:
                         # wrapping
                         sid, text, _, textlen, _ = self.wrapper.wrap(bunch)
                         # [1, T, M]
-                        pred, _, _ = self.model(
+                        pred, _, aux = self.model(
                             text[:1], textlen[:1], sid=sid[:1], sample=False)
                         # [T, M]
                         pred = pred.cpu().detach().numpy().squeeze(0)
                         self.train_log.add_image(
+                            # [3, M, T]
                             'train/mel', self.mel_img(pred).transpose(2, 0, 1), step)
+                        # [T, S]
+                        align = aux['align'].cpu().detach().numpy().squeeze(0)
+                        # [3, S, T]
+                        align = self.cmap[(align * 255).astype(np.long)].transpose(2, 1, 0)
+                        self.train_log.add_image('train/align', align, step)
                         del pred
 
             self.model.save(
