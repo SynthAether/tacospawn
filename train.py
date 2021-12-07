@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 from config import Config
 from tacospawn import TacoSpawn
@@ -39,6 +40,7 @@ class Trainer:
             self.dataset,
             batch_size=config.data.batch,
             shuffle=config.train.shuffle,
+            collate_fn=self.dataset.collate,
             num_workers=config.train.num_workers,
             pin_memory=config.train.pin_memory)
 
@@ -48,9 +50,9 @@ class Trainer:
             (config.train.beta1, config.train.beta2),
             config.train.eps)
 
-        self.train_log = torch.utils.tensorboard.SummaryWriter(
+        self.train_log = SummaryWriter(
             os.path.join(config.train.log, config.train.name, 'train'))
-        self.test_log = torch.utils.tensorboard.SummaryWriter(
+        self.test_log = SummaryWriter(
             os.path.join(config.train.log, config.train.name, 'test'))
 
         self.ckpt_path = os.path.join(
@@ -63,9 +65,9 @@ class Trainer:
         Args:
             epoch: starting step.
         """
-        step = epoch * len(self.trainset)
+        step = epoch * len(self.loader)
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
-            with tqdm.tqdm(total=len(self.trainset), leave=False) as pbar:
+            with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
                     loss, losses = self.wrapper.compute_loss(bunch)
                     # update
@@ -83,27 +85,27 @@ class Trainer:
                     with torch.no_grad():
                         grad_norm = np.mean([
                             torch.norm(p.grad).item()
-                            for p in self.app.model.parameters() if p.grad is not None])
+                            for p in self.model.parameters() if p.grad is not None])
                         param_norm = np.mean([
                             torch.norm(p).item()
-                            for p in self.app.model.parameters() if p.dtype == torch.float32])
+                            for p in self.model.parameters() if p.dtype == torch.float32])
 
                     self.train_log.add_scalar('common/grad-norm', grad_norm, step)
                     self.train_log.add_scalar('common/param-norm', param_norm, step)
 
-                    if (it + 1) % (len(self.trainset) // 10) == 0:
+                    if (it + 1) % (len(self.loader) // 10) == 0:
                         # wrapping
-                        sid, text, textlen, mel, mellen = self.wrapper.wrap(bunch)
+                        sid, text, _, textlen, _ = self.wrapper.wrap(bunch)
                         # [1, T, M]
                         pred, _, _ = self.model(
-                            text[:1], mel[:1], textlen[:1], mellen[:1], spkid=sid, sample=False)
+                            text[:1], textlen[:1], sid=sid[:1], sample=False)
                         # [T, M]
-                        pred = pred.cpu().detach().numpy().squeze(0)
+                        pred = pred.cpu().detach().numpy().squeeze(0)
                         self.train_log.add_image(
                             'train/mel', self.mel_img(pred).transpose(2, 0, 1), step)
                         del pred
 
-            self.app.save(
+            self.model.save(
                 '{}_{}.ckpt'.format(self.ckpt_path, epoch), self.optim)
 
     def mel_img(self, mel: np.ndarray) -> np.ndarray:
@@ -114,7 +116,7 @@ class Trainer:
             [float32; [M, T, 3]], mel-spectrogram in viridis color map.
         """
         # [M, T]
-        mel = mel.transpose(1, 2)
+        mel = mel.transpose(1, 0)
         # minmax norm in range(0, 1)
         mel = (mel - mel.min()) / (mel.max() - mel.min())
         # in range(0, 255)
@@ -168,8 +170,8 @@ if __name__ == '__main__':
     libritts = LibriTTSDataset(args.data_dir, config.data)
 
     # model definition
-    device = torch.deivce('cuda:0' if torch.cuda.is_available() else 'cpu')
-    tacospawn  = TacoSpawn(config.model)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    tacospawn = TacoSpawn(config.model)
     tacospawn.to(device)
 
     trainer = Trainer(tacospawn, libritts, config, device)
