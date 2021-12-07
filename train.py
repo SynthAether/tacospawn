@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-from typing import List, Tuple
 
 import git
 import matplotlib.pyplot as plt
@@ -12,6 +11,7 @@ import tqdm
 from config import Config
 from tacospawn import TacoSpawn
 from utils.libritts import LibriTTS, LibriTTSDataset
+from utils.wrapper import TrainingWrapper
 
 
 class Trainer:
@@ -32,6 +32,8 @@ class Trainer:
         self.model = model
         self.dataset = dataset
         self.config = config
+
+        self.wrapper = TrainingWrapper(model, device)
 
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
@@ -65,137 +67,54 @@ class Trainer:
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.trainset), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
-                    # ([], [], []), FrozenDict, State
-                    (loss, losses, grad_norm), self.app.param, self.optim_state = \
-                        self.update_fn(self.app.param, self.optim_state,
-                                       speech, noise, mel, time)
+                    loss, losses = self.wrapper.compute_loss(bunch)
+                    # update
+                    self.optim.zero_grad()
+                    loss.backward()
+                    self.optim.step()
 
                     step += 1
                     pbar.update()
                     pbar.set_postfix({'loss': loss.item(), 'step': step})
 
-                    with self.train_log.as_default():
-                        for name, loss in losses.items():
-                            tf.summary.scalar(f'loss/{name}', loss.item(), step)
-
-                        tf.summary.scalar('common/grad-norm', grad_norm.item(), step)
-
-                        param_norm = np.mean(
-                            [jnp.linalg.norm(x)
-                             for x in jax.tree_util.tree_leaves(self.app.param)])
-                        tf.summary.scalar('common/param-norm', param_norm.item(), step)
-
-                        if (it + 1) % (len(self.trainset) // 10) == 0:
-                            key, sub = jax.random.split(key)
-                            # [1, T]
-                            pred, _ = self.app(mel[0:1], timesteps, key=sub, use_tqdm=True)
-                            # [T]
-                            pred = np.asarray(pred).squeeze(0)
-                            tf.summary.audio(
-                                'train/audio', pred[None, :, None], self.config.data.sr, step)
-                            tf.summary.image(
-                                'train/mel', self.mel_img(pred)[None], step)
-                            del pred
+                    for name, loss in losses.items():
+                        self.train_log.add_scalar(f'loss/{name}', loss.item(), step)
                     
-                    del mel, speech, noise, time, loss, losses, grad_norm, param_norm
+                    with torch.no_grad():
+                        grad_norm = np.mean([
+                            torch.norm(p.grad).item()
+                            for p in self.app.model.parameters() if p.grad is not None])
+                        param_norm = np.mean([
+                            torch.norm(p).item()
+                            for p in self.app.model.parameters() if p.dtype == torch.float32])
 
-            self.app.write(
-                '{}_{}.ckpt'.format(self.ckpt_path, epoch), self.optim_state)
+                    self.train_log.add_scalar('common/grad-norm', grad_norm, step)
+                    self.train_log.add_scalar('common/param-norm', param_norm, step)
 
-            # test loss
-            losses = {}
-            for mel, speech in tqdm.tqdm(self.testset, leave=False):
-                key, s1, s2 = jax.random.split(key, num=3)
-                # [B, T]
-                noise = jax.random.normal(s1, speech.shape)
-                # [B], sample uniformly
-                time = jnp.linspace(0., 1., speech.shape[0], endpoint=False)
-                # add start point
-                time = jnp.fmod(jax.random.uniform(s2) + time, 1.)
-                # []
-                _, lossdict = self.loss_fn(self.app.param, speech, noise, mel, time)
-                # update dict
-                for name, loss in lossdict.items():
-                    if name not in losses:
-                        losses[name] = []
-                    losses[name].append(loss.item())
-                # remove 
-                del mel, speech, noise, time, loss, lossdict
-            # test log
-            with self.test_log.as_default():
-                for name, loss in losses.items():
-                    tf.summary.scalar(f'loss/{name}', np.mean(loss), step)
+                    if (it + 1) % (len(self.trainset) // 10) == 0:
+                        # wrapping
+                        sid, text, textlen, mel, mellen = self.wrapper.wrap(bunch)
+                        # [1, T, M]
+                        pred, _, _ = self.model(
+                            text[:1], mel[:1], textlen[:1], mellen[:1], spkid=sid, sample=False)
+                        # [T, M]
+                        pred = pred.cpu().detach().numpy().squeze(0)
+                        self.train_log.add_image(
+                            'train/mel', self.mel_img(pred).transpose(2, 0, 1), step)
+                        del pred
 
-                gt, pred, ir = self.eval(timesteps)
-                tf.summary.audio(
-                    'eval/gt', gt[None, :, None], self.config.data.sr, step)
-                tf.summary.audio(
-                    'eval/audio', pred[None, :, None], self.config.data.sr, step)
+            self.app.save(
+                '{}_{}.ckpt'.format(self.ckpt_path, epoch), self.optim)
 
-                tf.summary.image(
-                    'eval/gt', self.mel_img(gt)[None], step)
-                tf.summary.image(
-                    'eval/mel', self.mel_img(pred)[None], step)
-
-                interval = 1 if timesteps < IR_INTERVAL else timesteps // IR_INTERVAL
-                for i in range(0, timesteps, interval):
-                    tf.summary.image(f'eval/ir{i}', self.mel_img(ir[i])[None], step)
-
-                del gt, pred, ir
-
-    def eval(self, timesteps: int = 10) -> \
-            Tuple[np.ndarray, np.ndarray, List[np.ndarray]]:
-        """Generate evaluation purpose audio.
-        Args:
-            timesteps: the number of the time steps. 
-        Returns:
-            speech: [float32; [T]], ground truth.
-            pred: [float32; [T]], predicted.
-            ir: List[np.ndarray], steps x [float32; [T]],
-                intermediate represnetations.
-        """
-        MAX_MELLEN = 160
-        # [B, T // H, M], [B, T], [B], [B]
-        mel, speech, mellen, speechlen = next(self.testset.dataset.as_numpy_iterator())
-        # [1, T], steps x [1, T]
-        pred, ir = self.app(
-            mel[0:1, :min(mellen[0], MAX_MELLEN)], timesteps,
-            key=jax.random.PRNGKey(0), use_tqdm=True)
-        # [T]
-        pred = np.asarray(pred.squeeze(axis=0))
-        # config.model.iter x [T]
-        ir = [i.squeeze(axis=0) for i in ir]
-        return speech[0, :speechlen[0]], pred, ir
-    
-    def mel_fn(self, signal: np.ndarray) -> np.ndarray:
-        """Convert signal to the mel-spectrogram.
-        Args:
-            signal: [float32; [T]], input signal.
-        Returns:
-            [float32; [M, T // H]], mel-spectrogram.
-        """
-        # [fft // 2 + 1, T // H]
-        stft = librosa.stft(
-            signal,
-            self.config.data.fft,
-            self.config.data.hop,
-            self.config.data.win,
-            self.config.data.win_fn,
-            center=True, pad_mode='reflect')
-        # [M, T // H]
-        mel = self.melfilter @ np.abs(stft)
-        # [M, T // H]
-        return np.log(np.maximum(mel, self.config.data.eps))
-
-    def mel_img(self, signal: np.ndarray) -> np.ndarray:
+    def mel_img(self, mel: np.ndarray) -> np.ndarray:
         """Generate mel-spectrogram images.
         Args:
-            signal: [float32; [T]], speech signal.
+            signal: [float32; [T, M]], speech signal.
         Returns:
-            [float32; [M, T // H, 3]], mel-spectrogram in viridis color map.
+            [float32; [M, T, 3]], mel-spectrogram in viridis color map.
         """
-        # [M, T // H]
-        mel = self.mel_fn(signal)
+        # [M, T]
+        mel = mel.transpose(1, 2)
         # minmax norm in range(0, 1)
         mel = (mel - mel.min()) / (mel.max() - mel.min())
         # in range(0, 255)
