@@ -96,9 +96,10 @@ class Trainer:
                     if (it + 1) % (len(self.loader) // 10) == 0:
                         # wrapping
                         sid, text, _, textlen, _ = self.wrapper.wrap(bunch)
-                        # [1, T, M]
-                        pred, _, aux = self.model(
-                            text[:1], textlen[:1], sid=sid[:1], sample=False)
+                        with torch.no_grad():
+                            # [1, T, M]
+                            pred, _, aux = self.model(
+                                text[:1], textlen[:1], sid=sid[:1], sample=False)
                         # [T, M]
                         pred = pred.cpu().detach().numpy().squeeze(0)
                         self.train_log.add_image(
