@@ -18,14 +18,14 @@ class LibriTTS(DataReader):
         Args:
             data_dir: dataset directory.
         """
-        self.rawset, self.preprocessor = self.load_data(data_dir)
+        self.filelist, self.transcript = self.load_data(data_dir)
 
     def dataset(self) -> List[str]:
         """Return file reader.
         Returns:
             file-format datum reader.
         """
-        return self.rawset
+        return self.filelist
     
     def preproc(self) -> Callable:
         """Return data preprocessor.
@@ -71,32 +71,23 @@ class LibriTTS(DataReader):
                     os.path.join(path, filename)
                     for filename in os.listdir(path) if filename.endswith('.wav')])
         # read audio
-        return paths, self._preproc_audio(trans)
+        return paths, trans
 
-    def _preproc_audio(self, table: Dict[str, str]) -> Callable:
-        """Generate audio loader.
+    def preprocessor(self, path: str) -> Tuple[int, str, np.ndarray]:
+        """Load audio and lookup text.
         Args:
-            table: lookup table from filename to text.
+            path: str, path
         Returns:
-            function from audio path to speech signal and text.
+            tuple,
+                sid: int, speaker id.
+                text: str, text.
+                audio: [np.float32; T], raw speech signal in range(-1, 1).
         """
-        def load_and_lookup(path: str) -> Tuple[int, str, np.ndarray]:
-            """Load audio and lookup text.
-            Args:
-                path: str, path
-            Returns:
-                tuple,
-                    sid: int, speaker id.
-                    text: str, text.
-                    audio: [np.float32; T], raw speech signal in range(-1, 1).
-            """
-            # [T]
-            audio, _ = librosa.load(path, sr=LibriTTS.SR)
-            # str
-            path = os.path.basename(path).replace('.wav', '')
-            # int, str
-            sid, text = table.get(path, (-1, ''))
-            # int, str, [np.float32; T]
-            return sid, text, audio.astype(np.float32)
-
-        return load_and_lookup
+        # [T]
+        audio, _ = librosa.load(path, sr=LibriTTS.SR)
+        # str
+        path = os.path.basename(path).replace('.wav', '')
+        # int, str
+        sid, text = self.transcript.get(path, (-1, ''))
+        # int, str, [np.float32; T]
+        return sid, text, audio.astype(np.float32)
