@@ -43,7 +43,7 @@ class TrainingWrapper:
         # wrapping
         sid, text, mel, textlen, mellen = self.wrap(bunch)
         # outputs
-        pred, predlen, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
+        pred, _, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
         # 1. mel spectrogram loss
         rctor = F.l1_loss(mel, pred)
         # 2. factor loss, length matching loss

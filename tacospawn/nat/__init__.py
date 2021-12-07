@@ -66,7 +66,7 @@ class NonAttentiveTacotron(nn.Module):
             mel: [torch.float32; [B, T, M]], mel-spectrogram, if provided.
             mellen: [torch.long; [B]], spectrogram lengths, if provided.
         Returns:
-            mel: [torch.float32; [B, T, B]], predicted spectrogram.
+            mel: [torch.float32; [B, T, M]], predicted spectrogram.
             mellen: [torch.long; [B]], spectrogram lengths.
             auxiliary: auxiliary informations.
                 align: [torch.float32; [B, T // F, S]], attention alignments.
