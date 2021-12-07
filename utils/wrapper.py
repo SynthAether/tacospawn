@@ -41,14 +41,21 @@ class TrainingWrapper:
         # 2. factor loss, length matching loss
         factor = torch.square(aux['factor']).mean()
         # 3. prior matching
+        # [B, E]
+        sample = aux['speaker']['sample']
         # [K], [K, E], [K, E]
         weight, mean, std = self.model.parametrize(self.model.priorbuffer)
+        # [B, K, E]
+        ll = -2 * torch.log(std[None] + 1e-5) - \
+            torch.square((sample[:, None] - mean[None]) / (std[None] + 1e-5))
+        # [B, E]
+        gmm = (weight[None, :, None] * torch.exp(ll)).sum(dim=1)
+        likelihood = torch.log(gmm + 1e-5).mean()
         # likelihood = weight * 
         # likelihood = likelihood.mean()
         likelihood = 0.
         # 4. entropy loss
-        sample, mean, std = \
-            aux['speaker']['sample'], aux['speaker']['mean'], aux['speaker']['std']
+        mean, std = aux['speaker']['mean'], aux['speaker']['std']
         entropy = -2 * torch.log(std + 1e-5) - torch.square((sample - mean) / (std + 1e-5))
         entropy = entropy.mean()
         return rctor + factor + likelihood + entropy, {
