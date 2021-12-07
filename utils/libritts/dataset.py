@@ -51,14 +51,15 @@ class LibriTTSDataset(AcousticDataset):
                 textlen: [np.long; [B]], text lengths.
                 mellen: [np.long; [B]], spectrogram lengths.
         """
-        # [B]
-        sid = np.array([sid for sid, _, _ in bunch], dtype=np.long)
+        # [B], replace long to int64 for torch dtype supports
+        sid = np.array([sid for sid, _, _ in bunch], dtype=np.int64)
         # [B], [B]
         textlen, mellen = np.array(
             [[len(labels), len(spec)] for _, labels, spec in bunch], dtype=np.long).T
         # [B, S]
         text = np.stack(
             [np.pad(labels, [0, textlen.max() - len(labels)]) for _, labels, _ in bunch])
+        text = text.astype(np.int64)
         # [B, T, mel]
         mel = np.stack(
             [np.pad(spec, [[0, mellen.max() - len(spec)], [0, 0]]) for _, _, spec in bunch])
