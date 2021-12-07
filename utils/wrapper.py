@@ -19,6 +19,15 @@ class TrainingWrapper:
         self.model = model
         self.device = device
 
+    def wrap(self, bunch: List[np.ndarray]) -> List[torch.Tensor]:
+        """Wrap the array to torch tensor.
+        Args:
+            bunch: input tensors.
+        Returns:
+            wrapped.
+        """
+        return [torch.tensor(array, device=self.device) for array in bunch]
+
     def compute_loss(self, bunch: List[np.ndarray]) -> Tuple[torch.Tensor, Dict[str, np.float32]]:
         """Compute unconditional VLB-TacoSpawn loss.
         Args:
@@ -32,8 +41,7 @@ class TrainingWrapper:
             loss tensor and details.
         """
         # wrapping
-        sid, text, mel, textlen, mellen = [
-            torch.tensor(array, device=self.device) for array in bunch]
+        sid, text, mel, textlen, mellen = self.wrap(bunch)
         # outputs
         pred, predlen, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
         # 1. mel spectrogram loss
