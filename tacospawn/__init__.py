@@ -77,7 +77,9 @@ class TacoSpawn(nn.Module):
         spkembed = mean[ids] + noise * (std[ids] if sample else 0.)
         # [B, T, M], [B], _
         mel, mellen, aux = self.nat(text, textlen, spkembed, mel, mellen)
-        return mel, mellen, {'spkembed': spkembed, **aux}
+        # speaker info
+        spkinfo = {'mean': mean, 'std': std, 'sample': spkembed}
+        return mel, mellen, {'speaker': spkinfo, **aux}
 
     def save(self, path: str, optim: Optional[torch.optim.Optimizer] = None):
         """Save the models.
