@@ -72,9 +72,9 @@ class TacoSpawn(nn.Module):
         # [K], [K, E], [K, E]
         _, mean, std = self.parametrize(buffer)
         # [B, E]
-        noise = torch.randn(bsize, self.spkembed, device=std.device)
+        mean, std = mean[ids], std[ids]
         # [B, E]
-        spkembed = mean[ids] + noise * (std[ids] if sample else 0.)
+        spkembed = mean + torch.randn_like(std) * (std if sample else 0.)
         # [B, T, M], [B], _
         mel, mellen, aux = self.nat(text, textlen, spkembed, mel, mellen)
         # speaker info
