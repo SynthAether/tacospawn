@@ -13,8 +13,7 @@ class TrainConfig:
         self.beta2 = 0.999
         self.eps = 1e-8
 
-        # 13000:100
-        self.split = 13000
+        # loader settings
         self.shuffle = True
         self.num_workers = 4
         self.pin_memory = True
