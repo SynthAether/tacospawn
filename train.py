@@ -38,7 +38,7 @@ class Trainer:
 
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
-            batch_size=config.data.batch,
+            batch_size=config.train.batch,
             shuffle=config.train.shuffle,
             collate_fn=self.dataset.collate,
             num_workers=config.train.num_workers,

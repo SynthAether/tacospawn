@@ -14,6 +14,7 @@ class TrainConfig:
         self.eps = 1e-8
 
         # loader settings
+        self.batch = 32
         self.shuffle = True
         self.num_workers = 4
         self.pin_memory = True
@@ -36,12 +37,13 @@ class Config:
     """Integrated configuration.
     """
     def __init__(self, speakers: int):
-        self.data = DataConfig()
+        self.train = TrainConfig()
+        # reset data.batch, use train.batch instead.
+        self.data = DataConfig(batch=None)
         self.model = ModelConfig(
             AcousticDataset.VOCABS,
             self.data.mel,
             speakers)
-        self.train = TrainConfig()
 
     def dump(self):
         """Dump configurations into serializable dictionary.
