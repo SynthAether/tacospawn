@@ -3,6 +3,7 @@ from typing import List, Tuple
 import numpy as np
 
 from speechset import AcousticDataset, Config
+from speechset.utils.normalizer import TextNormalizer
 
 from .reader import LibriTTS
 
@@ -17,6 +18,8 @@ class LibriTTSDataset(AcousticDataset):
             config: configurations.
         """
         super().__init__(LibriTTS(data_dir), config)
+        # overriding text normalizer
+        self.textnorm = TextNormalizer(TextNormalizer.REPORT_LOG)
 
     def normalize(self, sid: int, text: str, speech: np.ndarray) \
             -> Tuple[int, np.ndarray, np.ndarray]:
