@@ -18,6 +18,8 @@ class TrainingWrapper:
         """
         self.model = model
         self.device = device
+        # alias
+        self.reduction = model.taco.reduction.factor
 
     def wrap(self, bunch: List[np.ndarray]) -> List[torch.Tensor]:
         """Wrap the array to torch tensor.
@@ -42,11 +44,16 @@ class TrainingWrapper:
         """
         # wrapping
         sid, text, mel, textlen, mellen = self.wrap(bunch)
+        # for alignment endpoint loss
+        mel = F.pad(mel, [0, 0, 0, self.reduction])
+        # B, T, _
+        bsize, timestep, _ = mel.shape
         # [B, T]
         mel_mask = (
-            torch.arange(mel.size(1), device=mel.device)[None]
+            torch.arange(timestep, device=mel.device)[None]
             < mellen[:, None].to(torch.float32))
-        # masking with silence
+        # mask with silence
+        # => additional padding for spectrogram reduction should use silence pad value
         mel.masked_fill_(~mel_mask[..., None].to(torch.bool), np.log(1e-5))
 
         # outputs
@@ -68,7 +75,15 @@ class TrainingWrapper:
         mean, std = aux['speaker']['mean'], aux['speaker']['std']
         entropy = 2 * torch.log(std + 1e-5) + torch.square((sample - mean) / (std + 1e-5))
         entropy = entropy.mean()
-        return rctor - likelihood - entropy, {
+        # 4. align endpoint
+        # [B]
+        foldlen = torch.ceil(mellen / self.model.taco.reduction.factor).long()
+        # [B, S]
+        lastattn = aux['align'][torch.arange(bsize), foldlen]
+        endpoint = F.binary_cross_entropy(
+            lastattn, torch.zeros_like(lastattn).scatter(-1, textlen[:, None], 1.))
+        return rctor - likelihood - entropy + endpoint, {
             'rctor': rctor.cpu().detach().numpy(),
             'likelihood': likelihood.cpu().detach().numpy(),
-            'entropy': entropy.cpu().detach().numpy()}
+            'entropy': entropy.cpu().detach().numpy(),
+            'endpoint': endpoint.cpu().detach().numpy()}
