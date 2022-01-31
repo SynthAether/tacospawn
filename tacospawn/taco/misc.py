@@ -27,13 +27,15 @@ class Prenet(nn.Sequential):
 class Reduction(nn.Module):
     """Fold the inupts, applying reduction factor.
     """
-    def __init__(self, factor: int):
+    def __init__(self, factor: int, value: float = 0.):
         """Initializer.
         Args:
             factor: reduction factor.
+            value: padding value.
         """
         super().__init__()
         self.factor = factor
+        self.value = value
 
     def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, Optional[int]]:
         """Fold the inputs, apply reduction factor.
@@ -47,7 +49,7 @@ class Reduction(nn.Module):
         if timesteps % self.factor > 0:
             remains = self.factor - timesteps % self.factor
             # [B, T + R, C]
-            inputs = F.pad(inputs, [0, 0, 0, remains])
+            inputs = F.pad(inputs, [0, 0, 0, remains], value=self.value)
         else:
             # no remains
             remains = None

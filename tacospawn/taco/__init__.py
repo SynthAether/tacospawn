@@ -34,7 +34,8 @@ class Tacotron(nn.Module):
             config.cbhg_kernels,
             config.cbhg_highways)
 
-        self.reduction = Reduction(config.reduction)
+        # padding with silence
+        self.reduction = Reduction(config.reduction, value=np.log(1e-5))
 
         self.decoder = Decoder(
             config.channels + config.spkembed,
