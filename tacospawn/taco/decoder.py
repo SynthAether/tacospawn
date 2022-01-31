@@ -81,7 +81,7 @@ class Decoder(nn.Module):
         Returns:
             [torch.float32; [B, T, M]], predicted spectrogram.
         """
-        state = self.alinger.state_init(inputs, mask)
+        state = self.aligner.state_init(inputs, mask)
         # convert to cell
         blender = self.grucell(self.blender)
         cells = [self.grucell(gru) for gru in self.grus]
@@ -96,10 +96,11 @@ class Decoder(nn.Module):
         # [B, M], start frame
         frame = torch.full([bsize, self.proj.out_features], np.log(1e-5), device=inputs.device)
         # [B], initial spectrogram lengths.
-        mellen = torch.zeros(bsize, device=inputs.device)
+        maxlen = seqlen * self.max_factor
+        mellen = torch.full([bsize], maxlen, device=inputs.device)
         # T x [B, M], T x [B, S]
         frames, alphas = [], []
-        for timestep in range(seqlen * self.max_factor):
+        for timestep in range(maxlen):
             # [B, H]
             preproc = self.prenet(frame)
             # compute align
