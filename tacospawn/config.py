@@ -33,13 +33,10 @@ class Config:
         # reduction
         self.reduction = 2
 
-        # upsampler
-        self.upsampler_layers = 2
-
-        # positional encodings
-        self.pe = 32
-
         # decoder
         self.dec_prenet = [256, 128]
         self.dec_dropout = 0.5
         self.dec_layers = 2
+
+        # inference
+        self.dec_max_factor = 10

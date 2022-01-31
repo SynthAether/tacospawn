@@ -1,19 +1,18 @@
-import itertools
 from typing import Dict, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from .cbhg import Cbhg
 from .decoder import Decoder
-from .misc import PositionalEncodings, Prenet, Reduction
-from .upsampler import Upsampler
+from .misc import Prenet, Reduction
 from ..config import Config
 
 
-class NonAttentiveTacotron(nn.Module):
-    """Non-attentive tacotron for multispeakers
+class Tacotron(nn.Module):
+    """Tacotron for multispeakers
     """
     def __init__(self, config: Config):
         """Initializer.
@@ -21,7 +20,8 @@ class NonAttentiveTacotron(nn.Module):
             config: model configurations.
         """
         super().__init__()
-        self.embedding = nn.Embedding(config.vocabs, config.embeddings)
+        self.embedding = nn.Embedding(
+            config.vocabs, config.embeddings, padding_idx=0)
         self.prenet = Prenet(
             config.embeddings,
             config.enc_prenet + [config.channels // 2],
@@ -36,20 +36,14 @@ class NonAttentiveTacotron(nn.Module):
 
         self.reduction = Reduction(config.reduction)
 
-        self.upsampler = Upsampler(
-            config.channels + config.spkembed,
-            config.channels // 2,
-            config.upsampler_layers)
-
-        self.posenc = PositionalEncodings(config.pe, 30)
-
         self.decoder = Decoder(
-            config.channels + config.spkembed + config.pe,
+            config.channels + config.spkembed,
             config.channels,
             config.dec_prenet,
             config.dec_dropout,
             config.dec_layers,
-            config.reduction * config.mel)
+            config.reduction * config.mel,
+            config.dec_max_factor)
 
     def forward(self,
                 text: torch.Tensor,
@@ -74,6 +68,8 @@ class NonAttentiveTacotron(nn.Module):
                 factor: [torch.float32; [B]], size ratio between ground-truth and predicted lengths.
         """
         ## 1. Text encoding
+        # pad for eos check, default zero for pad
+        text = F.pad(text, [0, 1])
         # S
         seqlen = text.size(1)
         # [B, S]
@@ -94,51 +90,22 @@ class NonAttentiveTacotron(nn.Module):
         if mel is not None:
             # [B, T // F, F x M]
             mel, remains = self.reduction(mel)
-            # [B], assume mellen is not None
-            mellen = torch.ceil(mellen / self.reduction.factor).to(torch.long)
         else:
             remains = None
-        # [B, T // F, C + E], [B], _
-        upsampled, predlen, aux = self.upsampler(encodings, text_mask, mellen)
-        # [B, T // F, P]
-        pe = self.tokenwise_posenc(aux['durations'], upsampled.size(1))
         # [B, T // F, F x M]
-        mel = self.decoder(torch.cat([upsampled, pe], dim=-1), mel)
+        mel, aux = self.decoder(encodings, text_mask, gt=mel)
 
         ## 4. Unfold
         if mellen is None:
-            mellen = predlen.to(torch.long) * self.reduction.factor
+            mellen = aux['mellen'].to(torch.long) * self.reduction.factor
+            del aux['mellen']
         # [B, T, M]
         mel = self.reduction.unfold(mel, remains)
         # [B, T]
         mel_mask = (
             torch.arange(mel.size(1), device=mel.device)[None]
             < mellen[:, None]).to(torch.float32)
+        # mask with silence
+        masked_mel = mel.masked_fill(~mel_mask[..., None].to(torch.bool), np.log(1e-5))
         # [B, T, M]
-        return mel * mel_mask[..., None], mellen, aux
-
-    def tokenwise_posenc(self, durations: torch.Tensor, maxlen: int) -> torch.Tensor:
-        """Generate tokenwise positional encodings.
-        Args:
-            durations: [torch.float32; [B, S]], durations, not quantized.
-            maxlen: total length of the posenc.
-        Returns:
-            [torch.float32; [B, T, C]], token-wise positional encodings.
-        """
-        # [B, S], quantize
-        cumdur = torch.round(torch.cumsum(durations, dim=-1)).to(torch.long)
-        # [B, S]
-        durations = cumdur - F.pad(cumdur, [1, -1])
-        # [K, C]
-        cache = self.posenc(durations.max())
-        # [B, T, C]
-        pe = torch.zeros(
-            durations.size(0), maxlen, cache.size(-1), device=cache.device)
-        # [], [S]
-        for i, dur in enumerate(durations.detach().cpu().numpy()):
-            # [T]
-            indices = list(itertools.chain.from_iterable(range(s) for s in dur))
-            # [T, C]
-            pe[i, :len(indices)] = cache[indices]
-        # [B, T, C]
-        return pe
+        return masked_mel, mellen, {**aux, 'unmasked': mel}

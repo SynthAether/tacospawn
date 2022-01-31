@@ -5,11 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .config import Config
-from .nat import NonAttentiveTacotron
+from .taco import Tacotron
 
 
 class TacoSpawn(nn.Module):
-    """TacoSpawn variations of Non-attentive Tacotron.
+    """TacoSpawn: Speaker Generation.
     """
     def __init__(self, config: Config):
         """Initializer.
@@ -17,7 +17,7 @@ class TacoSpawn(nn.Module):
             config: configurations.
         """
         super().__init__()
-        self.nat = NonAttentiveTacotron(config)
+        self.taco = Tacotron(config)
         # constants
         self.modal = config.modal
         self.spkembed = config.spkembed
@@ -76,7 +76,7 @@ class TacoSpawn(nn.Module):
         # [B, E]
         spkembed = mean + torch.randn_like(std) * (std if sample else 0.)
         # [B, T, M], [B], _
-        mel, mellen, aux = self.nat(text, textlen, spkembed, mel, mellen)
+        mel, mellen, aux = self.taco(text, textlen, spkembed, mel, mellen)
         # speaker info
         spkinfo = {'mean': mean, 'std': std, 'sample': spkembed}
         return mel, mellen, {'speaker': spkinfo, **aux}

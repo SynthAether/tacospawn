@@ -42,13 +42,18 @@ class TrainingWrapper:
         """
         # wrapping
         sid, text, mel, textlen, mellen = self.wrap(bunch)
+        # [B, T]
+        mel_mask = (
+            torch.arange(mel.size(1), device=mel.device)[None]
+            < mellen[:, None].to(torch.float32))
+        # masking with silence
+        mel.masked_fill_(~mel_mask[..., None].to(torch.bool), np.log(1e-5))
+
         # outputs
-        pred, _, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
+        _, _, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
         # 1. mel spectrogram loss
-        rctor = F.l1_loss(mel, pred)
-        # 2. factor loss, length matching loss
-        factor = torch.square(aux['factor']).mean()
-        # 3. prior matching
+        rctor = F.l1_loss(mel, aux['unmasked'])
+        # 2. prior matching
         # [B, E]
         sample = aux['speaker']['sample']
         # [K], [K, E], [K, E]
@@ -58,13 +63,12 @@ class TrainingWrapper:
             torch.square((sample[:, None] - mean[None]) / (std[None] + 1e-5))
         # [B, E]
         gmm = (weight[None, :, None] * torch.exp(ll)).sum(dim=1)
-        likelihood = -torch.log(gmm + 1e-5).mean()
-        # 4. entropy loss
+        likelihood = torch.log(gmm + 1e-5).mean()
+        # 3. entropy loss
         mean, std = aux['speaker']['mean'], aux['speaker']['std']
-        entropy = -2 * torch.log(std + 1e-5) - torch.square((sample - mean) / (std + 1e-5))
+        entropy = 2 * torch.log(std + 1e-5) + torch.square((sample - mean) / (std + 1e-5))
         entropy = entropy.mean()
-        return rctor + factor + likelihood + entropy, {
+        return rctor - likelihood - entropy, {
             'rctor': rctor.cpu().detach().numpy(),
-            'factor': factor.cpu().detach().numpy(),
             'likelihood': likelihood.cpu().detach().numpy(),
             'entropy': entropy.cpu().detach().numpy()}
