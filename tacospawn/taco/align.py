@@ -51,14 +51,14 @@ class Aligner(nn.Module):
             state: updated states.
         """
         # [B, I]
-        prev = (state['encodings'] * state['alpha'][..., None]).sum(dim=1)
+        prev = (state['enc'] * state['alpha'][..., None]).sum(dim=1)
         # [B, C]
-        state = self.attn(torch.cat([frame, prev], dim=-1), state['state'])
+        cellstate = self.attn(torch.cat([frame, prev], dim=-1), state['state'])
         # [B, 1]
-        stop, next_ = self.trans(state).chunk(2, dim=-1)
+        stop, next_ = self.trans(cellstate).chunk(2, dim=-1)
         # [B, S]
         alpha = stop * state['alpha'] + next_ * F.pad(state['alpha'], [1, -1])
-        return {**state, 'state': state, 'alpha': alpha * state['mask']}
+        return {**state, 'state': cellstate, 'alpha': alpha * state['mask']}
 
     def forward(self,
                 encodings: torch.Tensor,
