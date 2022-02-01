@@ -39,4 +39,4 @@ class Config:
         self.dec_layers = 2
 
         # inference
-        self.dec_max_factor = 10 // self.reduction
+        self.dec_max_factor = 8 // self.reduction
