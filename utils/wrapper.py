@@ -42,7 +42,7 @@ class TrainingWrapper:
         Returns:
             loss tensor and details.
         """
-        # wrapping
+        ## wrapping
         sid, text, mel, textlen, mellen = self.wrap(bunch)
         # for alignment endpoint loss
         mel = F.pad(mel, [0, 0, 0, self.reduction])
@@ -56,8 +56,8 @@ class TrainingWrapper:
         # => additional padding for spectrogram reduction should use silence pad value
         mel.masked_fill_(~mel_mask[..., None].to(torch.bool), np.log(1e-5))
 
-        # outputs
-        _, _, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
+        ## outputs
+        masked_mel, _, aux = self.model(text, textlen, mel, mellen, sid=sid, sample=True)
         # 1. mel spectrogram loss
         rctor = F.l1_loss(mel, aux['unmasked'])
         # 2. prior matching
@@ -82,8 +82,13 @@ class TrainingWrapper:
         lastattn = aux['align'][torch.arange(bsize), foldlen]
         endpoint = F.binary_cross_entropy(
             lastattn, torch.zeros_like(lastattn).scatter(-1, textlen[:, None], 1.))
-        return rctor - likelihood - entropy + endpoint, {
+        
+        ## aggregation
+        loss = rctor - likelihood - entropy + endpoint
+        losses = {
             'rctor': rctor.cpu().detach().numpy(),
             'likelihood': likelihood.cpu().detach().numpy(),
             'entropy': entropy.cpu().detach().numpy(),
             'endpoint': endpoint.cpu().detach().numpy()}
+        aux = {'mel': masked_mel, 'align': aux['align']}
+        return loss, losses, aux 
