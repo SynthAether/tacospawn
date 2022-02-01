@@ -65,11 +65,12 @@ class Trainer:
         Args:
             epoch: starting step.
         """
+        self.model.train()
         step = epoch * len(self.loader)
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
-                    loss, losses = self.wrapper.compute_loss(bunch)
+                    loss, losses, aux = self.wrapper.compute_loss(bunch)
                     # update
                     self.optim.zero_grad()
                     loss.backward()
@@ -93,23 +94,35 @@ class Trainer:
                     self.train_log.add_scalar('common/grad-norm', grad_norm, step)
                     self.train_log.add_scalar('common/param-norm', param_norm, step)
 
-                    if (it + 1) % (len(self.loader) // 10) == 0:
-                        # wrapping
-                        sid, text, _, textlen, _ = self.wrapper.wrap(bunch)
-                        with torch.no_grad():
-                            # [1, T, M]
-                            pred, _, aux = self.model(
-                                text[:1], textlen[:1], sid=sid[:1], sample=False)
-                        # [T, M]
-                        pred = pred.cpu().detach().numpy().squeeze(0)
+                    if (it + 1) % (len(self.loader) // 100) == 0:
                         self.train_log.add_image(
                             # [3, M, T]
-                            'train/mel', self.mel_img(pred).transpose(2, 0, 1), step)
+                            'train/mel', self.mel_img(aux['mel']).transpose(2, 0, 1), step)
                         # [T, S]
                         align = aux['align'].cpu().detach().numpy().squeeze(0)
                         # [3, S, T]
                         align = self.cmap[(align * 255).astype(np.long)].transpose(2, 1, 0)
                         self.train_log.add_image('train/align', align, step)
+
+                    if (it + 1) % (len(self.loader) // 10) == 0:
+                        # wrapping
+                        sid, text, _, textlen, _ = self.wrapper.wrap(bunch)
+                        with torch.no_grad():
+                            self.model.eval()
+                            # [1, T, M]
+                            pred, _, aux = self.model(
+                                text[:1], textlen[:1], sid=sid[:1], sample=False)
+                            self.model.train()
+                        # [T, M]
+                        pred = pred.cpu().detach().numpy().squeeze(0)
+                        self.train_log.add_image(
+                            # [3, M, T]
+                            'eval/mel', self.mel_img(pred).transpose(2, 0, 1), step)
+                        # [T, S]
+                        align = aux['align'].cpu().detach().numpy().squeeze(0)
+                        # [3, S, T]
+                        align = self.cmap[(align * 255).astype(np.long)].transpose(2, 1, 0)
+                        self.train_log.add_image('eval/align', align, step)
                         del pred
 
             self.model.save(
