@@ -95,11 +95,13 @@ class Trainer:
                     self.train_log.add_scalar('common/param-norm', param_norm, step)
 
                     if (it + 1) % (len(self.loader) // 100) == 0:
+                        # [T, M]
+                        mel = aux['mel'][0].cpu().detach().numpy()
                         self.train_log.add_image(
                             # [3, M, T]
-                            'train/mel', self.mel_img(aux['mel']).transpose(2, 0, 1), step)
+                            'train/mel', self.mel_img(mel).transpose(2, 0, 1), step)
                         # [T, S]
-                        align = aux['align'].cpu().detach().numpy().squeeze(0)
+                        align = aux['align'][0].cpu().detach().numpy()
                         # [3, S, T]
                         align = self.cmap[(align * 255).astype(np.long)].transpose(2, 1, 0)
                         self.train_log.add_image('train/align', align, step)
