@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from config import Config
 from tacospawn import TacoSpawn
-from utils.libritts import LibriTTS, LibriTTSDataset
+from utils.libritts import LibriTTS, LibriTTSDataset, DumpDataset
 from utils.wrapper import TrainingWrapper
 
 
@@ -159,6 +159,7 @@ if __name__ == '__main__':
     parser.add_argument('--data-dir', default=None)
     parser.add_argument('--name', default=None)
     parser.add_argument('--auto-rename', default=False, action='store_true')
+    parser.add_argument('--from-dump', default=False, action='store_true')
     args = parser.parse_args()
 
     # seed setting
@@ -189,7 +190,8 @@ if __name__ == '__main__':
         os.makedirs(ckpt_path)
 
     # prepare datasets
-    libritts = LibriTTSDataset(args.data_dir, config.data)
+    libritts = DumpDataset(args.data_dir, config.data) \
+        if args.from_dump else LibriTTSDataset(args.data_dir, config.data)
 
     # model definition
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
