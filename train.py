@@ -95,13 +95,20 @@ class Trainer:
                     self.train_log.add_scalar('common/param-norm', param_norm, step)
 
                     if (it + 1) % (len(self.loader) // 100) == 0:
+                        IDX = 0
+                        _, _, gt, textlen, mellen = [b[IDX] for b in bunch]
+                        self.train_log.add_image(
+                            # [3, M, T]
+                            'train/gt', self.mel_img(gt[:mellen]).transpose(2, 0, 1), step)
                         # [T, M]
-                        mel = aux['mel'][0].cpu().detach().numpy()
+                        mel = aux['mel'][IDX, :mellen].cpu().detach().numpy()
                         self.train_log.add_image(
                             # [3, M, T]
                             'train/mel', self.mel_img(mel).transpose(2, 0, 1), step)
+                        # []
+                        foldlen = -(-mellen // self.model.taco.reduction.factor)
                         # [T, S]
-                        align = aux['align'][0].cpu().detach().numpy()
+                        align = aux['align'][IDX, :foldlen + 1, :textlen + 1].cpu().detach().numpy()
                         # [3, S, T]
                         align = self.cmap[(align * 255).astype(np.long)].transpose(2, 1, 0)
                         self.train_log.add_image('train/align', align, step)
