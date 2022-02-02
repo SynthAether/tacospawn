@@ -19,11 +19,25 @@ To train model, run [train.py](./train.py).
 python train.py --data-dir /datasets/LibriTTS/train-clean-360
 ```
 
+Or dump the dataset to accelerate the train.
+
+```bash
+python -m utils.libritts.dump \
+    --data-dir /datasets/LibriTTS/train-clean-360 \
+    --output-dir /datasets/LibriTTS/train-clean-360-dump \
+    --num-proc 8
+
+python train.py \
+    --data-dir /datasets/libritts/raw-LibriTTS/train-clean-360-dump \
+    --from-dump
+```
+
 To start to train from previous checkpoint, `--load-epoch` is available.
 
 ```bash
 python train.py \
-    --data-dir /datasets/LibriTTS/train-clean-360 \
+    --data-dir /datasets/LibriTTS/train-clean-360-dump \
+    --from-dump \
     --load-epoch 20 \
     --config ./ckpt/t1.json
 ```
