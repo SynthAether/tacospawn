@@ -75,20 +75,12 @@ class TrainingWrapper:
         mean, std = aux['speaker']['mean'], aux['speaker']['std']
         entropy = 2 * torch.log(std + 1e-5) + torch.square((sample - mean) / (std + 1e-5))
         entropy = entropy.mean()
-        # 4. align endpoint
-        # [B]
-        foldlen = torch.ceil(mellen / self.model.taco.reduction.factor).long()
-        # [B, S]
-        lastattn = aux['align'][torch.arange(bsize), foldlen]
-        endpoint = F.binary_cross_entropy(
-            lastattn, torch.zeros_like(lastattn).scatter(-1, textlen[:, None], 1.))
-        
+
         ## aggregation
-        loss = rctor - likelihood - entropy + endpoint
+        loss = rctor - likelihood - entropy
         losses = {
             'rctor': rctor.cpu().detach().numpy(),
             'likelihood': likelihood.cpu().detach().numpy(),
-            'entropy': entropy.cpu().detach().numpy(),
-            'endpoint': endpoint.cpu().detach().numpy()}
+            'entropy': entropy.cpu().detach().numpy()}
         aux = {'mel': masked_mel, 'align': aux['align']}
         return loss, losses, aux 
